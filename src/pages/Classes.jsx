@@ -1,0 +1,302 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Users, 
+  User, 
+  FolderPlus, 
+  X, 
+  CheckCircle2, 
+  Phone, 
+  GraduationCap,
+  ChevronRight,
+  UserCheck
+} from 'lucide-react';
+
+const formatPhoneNumber = (value) => {
+  if (!value) return '+998 ';
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('998')) digits = digits.slice(3);
+  digits = digits.slice(0, 9);
+  let result = '+998 ';
+  if (digits.length > 0) result += digits.slice(0, 2);
+  if (digits.length >= 3) result += ' ' + digits.slice(2, 5);
+  if (digits.length >= 6) result += ' ' + digits.slice(5, 7);
+  if (digits.length >= 8) result += ' ' + digits.slice(7, 9);
+  return result;
+};
+
+const defaultClasses = [
+  { id: '9-A', name: '9-A sinf', teacher: 'Azizov M.', shift: '1-smena' },
+  { id: '9-B', name: '9-B sinf', teacher: 'Karimova Z.', shift: '1-smena' },
+  { id: '10-A', name: '10-A sinf', teacher: 'Tursunov D.', shift: '1-smena' },
+  { id: '11-A', name: '11-A sinf', teacher: 'Saidova N.', shift: '1-smena' },
+];
+
+export default function Classes() {
+  const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
+  const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
+
+  const [classesList, setClassesList] = useState(() => {
+    const saved = localStorage.getItem('edupulse_classes');
+    return saved ? JSON.parse(saved) : defaultClasses;
+  });
+
+  const [isAddClassOpen, setIsAddClassOpen] = useState(false);
+  const [selectedClassForView, setSelectedClassForView] = useState(null); // Bosilgan sinf ma'lumotlari
+  const [toastMsg, setToastMsg] = useState(null);
+
+  const [newClass, setNewClass] = useState({
+    gradeNumber: '',
+    gradeLetter: '',
+    teacherName: '',
+    teacherPhone: '+998 '
+  });
+
+  useEffect(() => {
+    localStorage.setItem('edupulse_classes', JSON.stringify(classesList));
+  }, [classesList]);
+
+  const isAdmin = user?.role === 'administrator';
+
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleAddClass = (e) => {
+    e.preventDefault();
+    if (!newClass.gradeNumber || !newClass.gradeLetter) return;
+
+    const classId = `${newClass.gradeNumber}-${newClass.gradeLetter.toUpperCase()}`;
+    const classObj = {
+      id: classId,
+      name: `${classId} sinf`,
+      teacher: newClass.teacherName || 'Tayinlanmagan',
+      teacherPhone: newClass.teacherPhone.length > 5 ? newClass.teacherPhone : 'Kiritilmagan',
+      shift: '1-smena'
+    };
+
+    setClassesList(prev => [...prev, classObj]);
+    setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ' });
+    setIsAddClassOpen(false);
+    showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
+  };
+
+  // Tanlangan sinfdagi o'quvchilar ro'yxati
+  const viewStudents = selectedClassForView 
+    ? studentsList.filter(s => s.grade === selectedClassForView.id) 
+    : [];
+
+  return (
+    <div className="px-4 sm:px-8 max-w-7xl mx-auto space-y-6 py-4">
+      {/* Toast bildirishnoma */}
+      {toastMsg && (
+        <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-2 text-xs font-bold animate-bounce">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Sarlavha va Admin uchun Sinf Qo'shish Tugmasi */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Maktab Sinflari
+          </h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+            Barcha faol sinflar ro'yxati (O'quvchilar ro'yxatini ko'rish uchun sinf ustiga bosing)
+          </p>
+        </div>
+
+        {/* FAQAT ADMIN KO'RADIGAN TUGMA */}
+        {isAdmin && (
+          <button
+            onClick={() => setIsAddClassOpen(true)}
+            className="inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition shadow-lg shadow-blue-500/20 active:scale-95 self-start sm:self-auto"
+          >
+            <FolderPlus className="w-4 h-4" />
+            <span>Sinf Qo'shish</span>
+          </button>
+        )}
+      </div>
+
+      {/* Sinflar Grid Ro'yxati */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {classesList.map((cls) => {
+          const studentCount = studentsList.filter(s => s.grade === cls.id).length;
+
+          return (
+            <div
+              key={cls.id}
+              onClick={() => setSelectedClassForView(cls)}
+              className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 cursor-pointer group hover:border-blue-300"
+            >
+              <div className="flex justify-between items-center">
+                <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
+                  {cls.name}
+                </span>
+                <div className="flex items-center space-x-1 text-slate-400 group-hover:text-blue-600 transition">
+                  <span className="text-[11px] font-medium">{cls.shift || '1-smena'}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-600 space-y-2 pt-1">
+                <p className="flex items-center space-x-2">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <span>O'quvchilar soni: <strong className="text-slate-900">{studentCount} ta</strong></span>
+                </p>
+
+                <p className="flex items-center space-x-2">
+                  <User className="w-4 h-4 text-emerald-500" />
+                  <span>Sinf rahbari: <strong className="text-slate-900">{cls.teacher}</strong></span>
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 1. SINFGA BOSGANDA O'QUVCHILAR RO'YXATINI KO'RSATUVCHI MODAL */}
+      {selectedClassForView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 relative max-h-[85vh] flex flex-col">
+            <button
+              onClick={() => setSelectedClassForView(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Sarlavhasi */}
+            <div className="flex items-center space-x-3 border-b border-slate-100 pb-4">
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                <GraduationCap className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">{selectedClassForView.name} O'quvchilari</h3>
+                <p className="text-xs text-slate-500">
+                  Sinf rahbari: <strong className="text-slate-800">{selectedClassForView.teacher}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* O'quvchilar Ro'yxati Kontenti */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 custom-scrollbar">
+              {viewStudents.length > 0 ? (
+                viewStudents.map((stu, idx) => (
+                  <div key={stu.id || idx} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <div className="flex items-center space-x-3">
+                      <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="font-extrabold text-xs text-slate-900">{stu.fullName}</p>
+                        <p className="text-[10px] text-slate-400">ID: {stu.id}</p>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-slate-600 space-y-0.5 self-end sm:self-auto text-right">
+                      {stu.studentPhone && stu.studentPhone !== 'Kiritilmagan' && (
+                        <p className="flex items-center justify-end space-x-1 text-slate-700 font-semibold">
+                          <Phone className="w-3 h-3 text-blue-500" />
+                          <span>{stu.studentPhone}</span>
+                        </p>
+                      )}
+                      {stu.parentName && (
+                        <p className="text-slate-400 text-[10px]">
+                          Ota-onasi: <strong className="text-slate-600">{stu.parentName}</strong> {stu.parentPhone ? `(${stu.parentPhone})` : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-10 space-y-2">
+                  <UserCheck className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-xs text-slate-400 font-medium">Ushbu sinfga hali o'quvchilar biriktirilmagan.</p>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setSelectedClassForView(null)}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl transition text-xs"
+            >
+              Yopish
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. FAQAT ADMIN UCHUN SINF QO'SHISH MODAL OYNASI */}
+      {isAdmin && isAddClassOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
+            <button
+              onClick={() => setIsAddClassOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-black text-slate-900">Yangi Sinf Qo'shish</h3>
+
+            <form onSubmit={handleAddClass} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Sinf Raqami</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Masalan: 11"
+                    value={newClass.gradeNumber}
+                    onChange={(e) => setNewClass({ ...newClass, gradeNumber: e.target.value })}
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Sinf Harfi</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Masalan: B"
+                    value={newClass.gradeLetter}
+                    onChange={(e) => setNewClass({ ...newClass, gradeLetter: e.target.value })}
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Ism-Familiyasi</label>
+                <input
+                  type="text"
+                  placeholder="Masalan: Murodov Aziz"
+                  value={newClass.teacherName}
+                  onChange={(e) => setNewClass({ ...newClass, teacherName: e.target.value })}
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Telefoni</label>
+                <input
+                  type="text"
+                  value={newClass.teacherPhone}
+                  onChange={(e) => setNewClass({ ...newClass, teacherPhone: formatPhoneNumber(e.target.value) })}
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition"
+              >
+                Sinfni Saqlash
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
