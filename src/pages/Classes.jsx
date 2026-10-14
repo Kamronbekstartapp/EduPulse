@@ -8,7 +8,8 @@ import {
   Phone, 
   GraduationCap,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  Clock
 } from 'lucide-react';
 
 const formatPhoneNumber = (value) => {
@@ -25,10 +26,8 @@ const formatPhoneNumber = (value) => {
 };
 
 const defaultClasses = [
-  { id: '9-A', name: '9-A sinf', teacher: 'Azizov M.', shift: '1-smena' },
-  { id: '9-B', name: '9-B sinf', teacher: 'Karimova Z.', shift: '1-smena' },
-  { id: '10-A', name: '10-A sinf', teacher: 'Tursunov D.', shift: '1-smena' },
-  { id: '11-A', name: '11-A sinf', teacher: 'Saidova N.', shift: '1-smena' },
+  { id: '9-A', name: '9-A sinf', teacher: 'Usmonova Kamola', shift: '1-smena' },
+  { id: '11-A', name: '11-A sinf', teacher: 'veverv5e', shift: '2-smena' },
 ];
 
 export default function Classes() {
@@ -40,15 +39,19 @@ export default function Classes() {
     return saved ? JSON.parse(saved) : defaultClasses;
   });
 
+  // Active shift filter: 'all', '1-smena', '2-smena'
+  const [activeShiftFilter, setActiveShiftFilter] = useState('all');
+
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
-  const [selectedClassForView, setSelectedClassForView] = useState(null); // Bosilgan sinf ma'lumotlari
+  const [selectedClassForView, setSelectedClassForView] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
   const [newClass, setNewClass] = useState({
     gradeNumber: '',
     gradeLetter: '',
     teacherName: '',
-    teacherPhone: '+998 '
+    teacherPhone: '+998 ',
+    shift: '1-smena'
   });
 
   useEffect(() => {
@@ -72,16 +75,21 @@ export default function Classes() {
       name: `${classId} sinf`,
       teacher: newClass.teacherName || 'Tayinlanmagan',
       teacherPhone: newClass.teacherPhone.length > 5 ? newClass.teacherPhone : 'Kiritilmagan',
-      shift: '1-smena'
+      shift: newClass.shift || '1-smena'
     };
 
     setClassesList(prev => [...prev, classObj]);
-    setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ' });
+    setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ', shift: '1-smena' });
     setIsAddClassOpen(false);
     showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
   };
 
-  // Tanlangan sinfdagi o'quvchilar ro'yxati
+  // Smena bo'yicha filterlangan sinflar
+  const filteredClasses = classesList.filter(cls => {
+    if (activeShiftFilter === 'all') return true;
+    return (cls.shift || '1-smena') === activeShiftFilter;
+  });
+
   const viewStudents = selectedClassForView 
     ? studentsList.filter(s => s.grade === selectedClassForView.id) 
     : [];
@@ -96,67 +104,110 @@ export default function Classes() {
         </div>
       )}
 
-      {/* Sarlavha va Admin uchun Sinf Qo'shish Tugmasi */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Sarlavha, Smena Filter tugmalari va Sinf Qo'shish Tugmasi */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Maktab Sinflari
           </h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-            Barcha faol sinflar ro'yxati (O'quvchilar ro'yxatini ko'rish uchun sinf ustiga bosing)
+            Barcha faol sinflar va smenalar ro'yxati
           </p>
         </div>
 
-        {/* FAQAT ADMIN KO'RADIGAN TUGMA */}
-        {isAdmin && (
-          <button
-            onClick={() => setIsAddClassOpen(true)}
-            className="inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition shadow-lg shadow-blue-500/20 active:scale-95 self-start sm:self-auto"
-          >
-            <FolderPlus className="w-4 h-4" />
-            <span>Sinf Qo'shish</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* RASMDAGI QIZIL KVADRAT ICHIDAGI SMENA FILTER TUGMALARI */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
+            <button
+              onClick={() => setActiveShiftFilter('all')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
+                activeShiftFilter === 'all' 
+                  ? 'bg-white text-slate-900 shadow-sm' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Barchasi
+            </button>
+            <button
+              onClick={() => setActiveShiftFilter('1-smena')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
+                activeShiftFilter === '1-smena' 
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              1-smena
+            </button>
+            <button
+              onClick={() => setActiveShiftFilter('2-smena')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
+                activeShiftFilter === '2-smena' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              2-smena
+            </button>
+          </div>
+
+          {/* ADMIN UCHUN SINF QO'SHISH TUGMASI */}
+          {isAdmin && (
+            <button
+              onClick={() => setIsAddClassOpen(true)}
+              className="inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition shadow-lg shadow-blue-500/20 active:scale-95"
+            >
+              <FolderPlus className="w-4 h-4" />
+              <span>Sinf Qo'shish</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sinflar Grid Ro'yxati */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {classesList.map((cls) => {
-          const studentCount = studentsList.filter(s => s.grade === cls.id).length;
+        {filteredClasses.length > 0 ? (
+          filteredClasses.map((cls) => {
+            const studentCount = studentsList.filter(s => s.grade === cls.id).length;
 
-          return (
-            <div
-              key={cls.id}
-              onClick={() => setSelectedClassForView(cls)}
-              className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 cursor-pointer group hover:border-blue-300"
-            >
-              <div className="flex justify-between items-center">
-                <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
-                  {cls.name}
-                </span>
-                <div className="flex items-center space-x-1 text-slate-400 group-hover:text-blue-600 transition">
-                  <span className="text-[11px] font-medium">{cls.shift || '1-smena'}</span>
-                  <ChevronRight className="w-4 h-4" />
+            return (
+              <div
+                key={cls.id}
+                onClick={() => setSelectedClassForView(cls)}
+                className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 cursor-pointer group hover:border-blue-300"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
+                    {cls.name}
+                  </span>
+                  <div className="flex items-center space-x-1.5 bg-slate-100 text-slate-700 px-2.5 py-1 rounded-xl group-hover:bg-blue-50 group-hover:text-blue-600 transition">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500" />
+                    <span className="text-[11px] font-black">{cls.shift || '1-smena'}</span>
+                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition" />
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-600 space-y-2 pt-1">
+                  <p className="flex items-center space-x-2">
+                    <Users className="w-4 h-4 text-blue-500" />
+                    <span>O'quvchilar soni: <strong className="text-slate-900">{studentCount} ta</strong></span>
+                  </p>
+
+                  <p className="flex items-center space-x-2">
+                    <User className="w-4 h-4 text-emerald-500" />
+                    <span>Sinf rahbari: <strong className="text-slate-900">{cls.teacher}</strong></span>
+                  </p>
                 </div>
               </div>
-
-              <div className="text-xs text-slate-600 space-y-2 pt-1">
-                <p className="flex items-center space-x-2">
-                  <Users className="w-4 h-4 text-blue-500" />
-                  <span>O'quvchilar soni: <strong className="text-slate-900">{studentCount} ta</strong></span>
-                </p>
-
-                <p className="flex items-center space-x-2">
-                  <User className="w-4 h-4 text-emerald-500" />
-                  <span>Sinf rahbari: <strong className="text-slate-900">{cls.teacher}</strong></span>
-                </p>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        ) : (
+          <div className="col-span-full text-center py-12 bg-white rounded-3xl border border-slate-200/80">
+            <p className="text-xs text-slate-400 font-bold">Ushbu smenada hali sinflar mavjud emas.</p>
+          </div>
+        )}
       </div>
 
-      {/* 1. SINFGA BOSGANDA O'QUVCHILAR RO'YXATINI KO'RSATUVCHI MODAL */}
+      {/* SINFGA BOSGANDA O'QUVCHILAR RO'YXATINI KO'RSATUVCHI MODAL */}
       {selectedClassForView && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 relative max-h-[85vh] flex flex-col">
@@ -167,7 +218,6 @@ export default function Classes() {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Modal Sarlavhasi */}
             <div className="flex items-center space-x-3 border-b border-slate-100 pb-4">
               <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
                 <GraduationCap className="w-6 h-6" />
@@ -175,16 +225,15 @@ export default function Classes() {
               <div>
                 <h3 className="text-lg font-black text-slate-900">{selectedClassForView.name} O'quvchilari</h3>
                 <p className="text-xs text-slate-500">
-                  Sinf rahbari: <strong className="text-slate-800">{selectedClassForView.teacher}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
+                  Rahbar: <strong className="text-slate-800">{selectedClassForView.teacher}</strong> | Smena: <strong className="text-blue-600">{selectedClassForView.shift || '1-smena'}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
                 </p>
               </div>
             </div>
 
-            {/* O'quvchilar Ro'yxati Kontenti */}
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 custom-scrollbar">
               {viewStudents.length > 0 ? (
                 viewStudents.map((stu, idx) => (
-                  <div key={stu.id || idx} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <div key={stu.id || idx} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-2">
                     <div className="flex items-center space-x-3">
                       <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
                         {idx + 1}
@@ -195,16 +244,10 @@ export default function Classes() {
                       </div>
                     </div>
 
-                    <div className="text-[11px] text-slate-600 space-y-0.5 self-end sm:self-auto text-right">
-                      {stu.studentPhone && stu.studentPhone !== 'Kiritilmagan' && (
-                        <p className="flex items-center justify-end space-x-1 text-slate-700 font-semibold">
-                          <Phone className="w-3 h-3 text-blue-500" />
-                          <span>{stu.studentPhone}</span>
-                        </p>
-                      )}
+                    <div className="text-[11px] text-slate-600 text-right">
                       {stu.parentName && (
-                        <p className="text-slate-400 text-[10px]">
-                          Ota-onasi: <strong className="text-slate-600">{stu.parentName}</strong> {stu.parentPhone ? `(${stu.parentPhone})` : ''}
+                        <p className="text-slate-500 text-[11px]">
+                          Ota-onasi: <strong className="text-slate-700">{stu.parentName}</strong>
                         </p>
                       )}
                     </div>
@@ -228,7 +271,7 @@ export default function Classes() {
         </div>
       )}
 
-      {/* 2. FAQAT ADMIN UCHUN SINF QO'SHISH MODAL OYNASI */}
+      {/* ADMIN UCHUN SINF QO'SHISH MODAL OYNASI */}
       {isAdmin && isAddClassOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -250,7 +293,7 @@ export default function Classes() {
                     placeholder="Masalan: 11"
                     value={newClass.gradeNumber}
                     onChange={(e) => setNewClass({ ...newClass, gradeNumber: e.target.value })}
-                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
                   />
                 </div>
                 <div>
@@ -261,9 +304,21 @@ export default function Classes() {
                     placeholder="Masalan: B"
                     value={newClass.gradeLetter}
                     onChange={(e) => setNewClass({ ...newClass, gradeLetter: e.target.value })}
-                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">O'qish Smenasi</label>
+                <select
+                  value={newClass.shift}
+                  onChange={(e) => setNewClass({ ...newClass, shift: e.target.value })}
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold bg-white"
+                >
+                  <option value="1-smena">1-smena (Ertalabki)</option>
+                  <option value="2-smena">2-smena (Tushdan keyingi)</option>
+                </select>
               </div>
 
               <div>
@@ -273,7 +328,7 @@ export default function Classes() {
                   placeholder="Masalan: Murodov Aziz"
                   value={newClass.teacherName}
                   onChange={(e) => setNewClass({ ...newClass, teacherName: e.target.value })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
                 />
               </div>
 
@@ -283,13 +338,13 @@ export default function Classes() {
                   type="text"
                   value={newClass.teacherPhone}
                   onChange={(e) => setNewClass({ ...newClass, teacherPhone: formatPhoneNumber(e.target.value) })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition active:scale-95"
               >
                 Sinfni Saqlash
               </button>

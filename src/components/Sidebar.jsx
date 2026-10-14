@@ -7,11 +7,12 @@ import {
   Users, 
   GraduationCap, 
   LogOut, 
-  ShieldCheck,
   UserCog,
   KeyRound,
   FileSpreadsheet,
-  Building2
+  Building2,
+  Calendar,
+  BookMarked
 } from 'lucide-react';
 
 export default function Sidebar({ onLogout, user }) {
@@ -28,12 +29,13 @@ export default function Sidebar({ onLogout, user }) {
     { path: '/', name: 'Bosh sahifa', icon: <Home className="w-5 h-5 flex-shrink-0" /> },
     { path: '/attendance', name: 'Davomat', icon: <CheckSquare className="w-5 h-5 flex-shrink-0" /> },
     { path: '/reports', name: 'Hisobotlar', icon: <FileSpreadsheet className="w-5 h-5 flex-shrink-0 text-emerald-500" /> },
-    { path: '/uniform', name: 'Forma', icon: <Shirt className="w-5 h-5 flex-shrink-0" /> },
+    { path: '/uniform', name: 'Forma & Kitob', icon: <Shirt className="w-5 h-5 flex-shrink-0" /> },
+    { path: '/timetable', name: 'Dars Jadvali', icon: <Calendar className="w-5 h-5 flex-shrink-0 text-amber-500" /> },
+    { path: '/my-class', name: 'Mening sinfim', icon: <BookMarked className="w-5 h-5 flex-shrink-0 text-purple-500" /> },
     { path: '/classes', name: 'Sinflar', icon: <Users className="w-5 h-5 flex-shrink-0" />, exact: true },
     { path: '/teachers', name: 'O\'qituvchilar', icon: <GraduationCap className="w-5 h-5 flex-shrink-0 text-blue-500" /> }
   ];
 
-  // FAQAT ADMIN KO'RADIGAN MENYULAR
   if (user?.role === 'administrator') {
     menuItems.push({
       path: '/admin-management',
@@ -52,7 +54,7 @@ export default function Sidebar({ onLogout, user }) {
     });
   }
 
-  const displayName = user?.role === 'administrator' ? "Maktab Ma'muri" : user?.username;
+  const displayName = user?.role === 'administrator' ? "ADMIN" : user?.username;
   const displayRole = user?.position || (user?.role === 'administrator' ? 'Bosh Admin' : 'O\'qituvchi');
   
   const avatarInitials = displayName
@@ -68,8 +70,8 @@ export default function Sidebar({ onLogout, user }) {
             onClick={() => navigate('/')} 
             className="flex items-center space-x-3 cursor-pointer px-3 py-2"
           >
-            <div className="bg-blue-600 p-2.5 rounded-2xl text-white shadow-lg shadow-blue-500/30 flex-shrink-0">
-              <ShieldCheck className="w-6 h-6" />
+            <div className="shadow-lg shadow-blue-500/30 flex-shrink-0">
+              <img src="/logo.png" alt="EduPulse Logo" width="48" height="32" />
             </div>
             <span className="text-2xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
               EduPulse
@@ -92,7 +94,7 @@ export default function Sidebar({ onLogout, user }) {
             </div>
           )}
 
-          <nav className="space-y-1">
+          <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-260px)] custom-scrollbar">
             {menuItems.map((item) => (
               <NavLink
                 key={item.path}

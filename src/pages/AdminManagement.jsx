@@ -46,7 +46,7 @@ export default function AdminManagement() {
     experience: '5 yil tajriba'
   });
 
-  // Serverdan ma'lumotlarni tortib kelish (Barcha foydalanuvchilar uchun bir xil ko'rinadi)
+  // Serverdan ma'lumotlarni yuklash
   useEffect(() => {
     loadAdmins();
   }, []);
@@ -99,7 +99,7 @@ export default function AdminManagement() {
       };
 
       await saveAdmin(payload);
-      await loadAdmins(); // Serverdan yangilangan ro'yxatni qayta yuklash
+      await loadAdmins();
 
       setIsFormOpen(false);
       showToast(editingId ? "Ma'muriyat xodimi tahrirlandi!" : "Yangi ma'muriyat xodimi qo'shildi!");
@@ -212,6 +212,7 @@ export default function AdminManagement() {
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
               >
+                <option value="ADMIN">ADMIN</option>
                 <option value="RAHBAR">RAHBAR</option>
                 <option value="TA'LIM">TA'LIM</option>
                 <option value="TARBIYA">TARBIYA</option>

@@ -53,3 +53,23 @@ export async function removeTeacherAccount(id) {
   const res = await fetch(`${API_URL}/teacher-accounts/${id}`, { method: 'DELETE' });
   return res.json();
 }
+
+// --- DARS JADVALi API ---
+export async function getTimetable() {
+  const res = await fetch(`${API_URL}/timetable`);
+  return res.json();
+}
+
+export async function saveTimetable(data) {
+  const res = await fetch(`${API_URL}/timetable`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
+export async function removeTimetable(id) {
+  const res = await fetch(`${API_URL}/timetable/${id}`, { method: 'DELETE' });
+  return res.json();
+}

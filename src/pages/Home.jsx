@@ -1,11 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Phone, Award } from 'lucide-react';
+import { getAdmins } from '../services/api';
 
 export default function Home() {
-  const [adminList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_school_admins');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [adminList, setAdminList] = useState([]);
+
+  // Sahifa ochilganda server bazasidan ma'muriyat xodimlarini tortib kelish
+  useEffect(() => {
+    loadAdmins();
+  }, []);
+
+  const loadAdmins = async () => {
+    try {
+      const data = await getAdmins();
+      setAdminList(data || []);
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
 
   return (
     <div className="px-4 sm:px-8 max-w-7xl mx-auto space-y-6 py-4">
@@ -43,7 +55,7 @@ export default function Home() {
         {adminList.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {adminList.map((item) => (
-              <div key={item.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-4">
+              <div key={item.admin_id || item.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-4">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center space-x-3.5">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm uppercase shadow-md shadow-blue-500/20">

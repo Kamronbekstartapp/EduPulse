@@ -13,6 +13,10 @@ import AdminManagement from './pages/AdminManagement';
 import TeacherAuthManagement from './pages/TeacherAuthManagement';
 import StudentsManagement from './pages/StudentsManagement';
 import ClassDetail from './pages/ClassDetail';
+import Timetable from './pages/Timetable';
+import BookNotebook from './pages/BookNotebook';
+import MyClass from './pages/MyClass';
+import ClassSubjectStatus from './pages/ClassSubjectStatus';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -54,6 +58,10 @@ export default function App() {
           <Route path="/uniform" element={<Uniform />} />
           <Route path="/classes" element={<Classes />} />
           <Route path="/teachers" element={<Teachers />} />
+          <Route path="/timetable" element={<Timetable />} />
+          <Route path="/book-notebook" element={<BookNotebook />} />
+          <Route path="/my-class" element={<MyClass />} />
+<Route path="/my-class/subject-status" element={<ClassSubjectStatus />} />
           
           {/* FAQAT ADMIN KO'RA OLADIGAN BOSHGARUV SAHIFALARI */}
           {user.role === 'administrator' && (
