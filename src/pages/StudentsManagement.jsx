@@ -38,17 +38,13 @@ const defaultStudents = [
     id: 'STU-01',
     fullName: 'Aliyev Samar Botirovich',
     grade: '9-A',
-    studentPhone: '+998 90 888 77 66',
-    parentName: 'Aliyev Botir',
-    parentPhone: '+998 90 123 45 67'
+    parentName: 'Aliyev Botir'
   },
   {
     id: 'STU-02',
     fullName: 'Karimova Zilola Rustamovna',
     grade: '9-A',
-    studentPhone: '+998 91 777 66 55',
-    parentName: 'Karimova Umida',
-    parentPhone: '+998 91 234 56 78'
+    parentName: 'Karimova Umida'
   }
 ];
 
@@ -82,9 +78,7 @@ export default function StudentsManagement() {
 
   const [newStudent, setNewStudent] = useState({
     fullName: '',
-    studentPhone: '+998 ',
     parentName: '',
-    parentPhone: '+998 ',
     grade: classesList[0]?.id || ''
   });
 
@@ -108,13 +102,11 @@ export default function StudentsManagement() {
       id: `STU-${Date.now().toString().slice(-4)}`,
       fullName: newStudent.fullName,
       grade: newStudent.grade,
-      studentPhone: newStudent.studentPhone.length > 5 ? newStudent.studentPhone : 'Kiritilmagan',
-      parentName: newStudent.parentName || 'Ota-onasi',
-      parentPhone: newStudent.parentPhone.length > 5 ? newStudent.parentPhone : 'Kiritilmagan'
+      parentName: newStudent.parentName || 'Ota-onasi'
     };
 
     setStudentsList(prev => [...prev, studentObj]);
-    setNewStudent({ fullName: '', studentPhone: '+998 ', parentName: '', parentPhone: '+998 ', grade: classesList[0]?.id || '' });
+    setNewStudent({ fullName: '', parentName: '', grade: classesList[0]?.id || '' });
     setIsAddStudentOpen(false);
     showToast("Yangi o'quvchi muvaffaqiyatli qo'shildi!");
   };
@@ -147,9 +139,7 @@ export default function StudentsManagement() {
 
   // Sinfni O'chirish (Delete)
   const handleDeleteClass = () => {
-    // Sinfni o'chiramiz
     setClassesList(prev => prev.filter(c => c.id !== deletingClassId));
-    // Shu sinfdagi o'quvchilarni ham tozalab yuboramiz
     setStudentsList(prev => prev.filter(s => s.grade !== deletingClassId));
     setDeletingClassId(null);
     showToast("Sinf va uning o'quvchilari o'chirildi!");
@@ -202,7 +192,6 @@ export default function StudentsManagement() {
               key={cls.id}
               className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 relative group"
             >
-              {/* Kartochkani bosganda o'sha sinf sahifasiga o'tadi */}
               <div 
                 onClick={() => navigate(`/students-management/${cls.id}`)}
                 className="cursor-pointer space-y-3"
@@ -220,7 +209,6 @@ export default function StudentsManagement() {
                 </div>
               </div>
 
-              {/* Sinfni Tahrirlash va O'chirish Tugmalari */}
               <div className="absolute top-4 right-4 flex items-center space-x-1">
                 <button
                   onClick={(e) => { e.stopPropagation(); setEditingClass(cls); }}
@@ -265,35 +253,14 @@ export default function StudentsManagement() {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">O'quvchi Telefoni</label>
+                <label className="block font-bold text-slate-700 mb-1">Ota-onasi F.I.O.</label>
                 <input 
                   type="text" 
-                  value={newStudent.studentPhone}
-                  onChange={(e) => setNewStudent({ ...newStudent, studentPhone: formatPhoneNumber(e.target.value) })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+                  placeholder="Aliyev Botir"
+                  value={newStudent.parentName}
+                  onChange={(e) => setNewStudent({ ...newStudent, parentName: e.target.value })}
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Ota-onasi Ismi</label>
-                  <input 
-                    type="text" 
-                    placeholder="Aliyev Botir"
-                    value={newStudent.parentName}
-                    onChange={(e) => setNewStudent({ ...newStudent, parentName: e.target.value })}
-                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Ota-onasi Telefoni</label>
-                  <input 
-                    type="text" 
-                    value={newStudent.parentPhone}
-                    onChange={(e) => setNewStudent({ ...newStudent, parentPhone: formatPhoneNumber(e.target.value) })}
-                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
-                  />
-                </div>
               </div>
 
               <div>
@@ -301,7 +268,7 @@ export default function StudentsManagement() {
                 <select 
                   value={newStudent.grade}
                   onChange={(e) => setNewStudent({ ...newStudent, grade: e.target.value })}
-                  className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700"
+                  className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
                 >
                   {classesList.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>

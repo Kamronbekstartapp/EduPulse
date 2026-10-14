@@ -12,8 +12,9 @@ import {
   AlertTriangle,
   Lock
 } from 'lucide-react';
+import { getAdmins, saveAdmin, removeAdmin } from '../services/api';
 
-// Telefon raqamini avtomatik ravishda chiroyli formatlash (+998 90 123 45 67)
+// Telefon raqamini avtomatik formatlash (+998 XX XXX XX XX)
 const formatPhoneNumber = (value) => {
   if (!value) return '+998 ';
   let digits = value.replace(/\D/g, '');
@@ -28,20 +29,9 @@ const formatPhoneNumber = (value) => {
   return result;
 };
 
-const defaultAdmins = [
-  { id: 'ADM-1', name: "G'ofurova Gulmira", title: 'Maktab Direktori', category: 'RAHBAR', phone: '+998 90 123 45 67', experience: '15 yil tajriba' },
-  { id: 'ADM-2', name: 'Tursunova Nigora Alisherovna', title: "O'quv ishlari bo'yicha direktor o'rinbosari (Zavuch)", category: "TA'LIM", phone: '+998 91 234 56 78', experience: '12 yil tajriba' },
-  { id: 'ADM-3', name: 'Oripov Jamshid Botirovich', title: "Ma'naviy-ma'rifiy ishlar bo'yicha o'rinbosari (CHBT)", category: 'TARBIYA', phone: '+998 93 345 67 89', experience: '10 yil tajriba' },
-  { id: 'ADM-4', name: 'Sodiqova Dilnoza Anvarovna', title: "Xo'jalik ishlari bo'yicha mudir (Zavxoz)", category: "TA'MINOT", phone: '+998 94 456 78 90', experience: '8 yil tajriba' }
-];
-
 export default function AdminManagement() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-
-  const [adminList, setAdminList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_school_admins');
-    return saved ? JSON.parse(saved) : defaultAdmins;
-  });
+  const [adminList, setAdminList] = useState([]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -56,11 +46,20 @@ export default function AdminManagement() {
     experience: '5 yil tajriba'
   });
 
+  // Serverdan ma'lumotlarni tortib kelish (Barcha foydalanuvchilar uchun bir xil ko'rinadi)
   useEffect(() => {
-    localStorage.setItem('edupulse_school_admins', JSON.stringify(adminList));
-  }, [adminList]);
+    loadAdmins();
+  }, []);
 
-  // Faqat admin ekanligini tekshirish
+  const loadAdmins = async () => {
+    try {
+      const data = await getAdmins();
+      setAdminList(data || []);
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
+
   const isAdmin = user?.role === 'administrator';
 
   const showToast = (msg) => {
@@ -77,7 +76,7 @@ export default function AdminManagement() {
 
   const handleOpenEditForm = (item) => {
     if (!isAdmin) return;
-    setEditingId(item.id);
+    setEditingId(item.admin_id);
     setFormData({
       name: item.name,
       title: item.title,
@@ -88,35 +87,41 @@ export default function AdminManagement() {
     setIsFormOpen(true);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
     if (!formData.name.trim() || !formData.title.trim()) return;
 
-    if (editingId) {
-      setAdminList(prev => prev.map(a => a.id === editingId ? { ...a, ...formData } : a));
-      showToast("Ma'muriyat xodimi tahrirlandi!");
-    } else {
-      const newItem = {
-        id: `ADM-${Date.now().toString().slice(-4)}`,
+    try {
+      const payload = {
+        admin_id: editingId || `ADM-${Date.now()}`,
         ...formData
       };
-      setAdminList(prev => [...prev, newItem]);
-      showToast("Yangi ma'muriyat xodimi qo'shildi!");
+
+      await saveAdmin(payload);
+      await loadAdmins(); // Serverdan yangilangan ro'yxatni qayta yuklash
+
+      setIsFormOpen(false);
+      showToast(editingId ? "Ma'muriyat xodimi tahrirlandi!" : "Yangi ma'muriyat xodimi qo'shildi!");
+    } catch (err) {
+      console.error("Saqlashda xatolik:", err);
     }
-    setIsFormOpen(false);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!isAdmin) return;
     if (deleteConfirmId) {
-      setAdminList(prev => prev.filter(a => a.id !== deleteConfirmId));
-      setDeleteConfirmId(null);
-      showToast("Xodim ro'yxatdan o'chirildi!");
+      try {
+        await removeAdmin(deleteConfirmId);
+        await loadAdmins();
+        setDeleteConfirmId(null);
+        showToast("Xodim ro'yxatdan o'chirildi!");
+      } catch (err) {
+        console.error("O'chirishda xatolik:", err);
+      }
     }
   };
 
-  // AGAR ADMIN BO'LMASA SAHIFANI BLOKLASH
   if (!isAdmin) {
     return (
       <div className="px-4 sm:px-8 max-w-7xl mx-auto py-16 text-center space-y-4">
@@ -133,7 +138,6 @@ export default function AdminManagement() {
 
   return (
     <div className="px-4 sm:px-8 max-w-7xl mx-auto space-y-6 py-4">
-      {/* Toast Bildirishnoma */}
       {toastMsg && (
         <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-2 text-xs font-bold animate-bounce">
           <CheckCircle2 className="w-5 h-5 text-emerald-400" />
@@ -141,7 +145,6 @@ export default function AdminManagement() {
         </div>
       )}
 
-      {/* Sarlavha & Shaxs Qo'shish Tugmasi */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center space-x-2">
@@ -162,7 +165,6 @@ export default function AdminManagement() {
         </button>
       </div>
 
-      {/* TUGMA BOSILGANDA OCHILADIGAN FORMA */}
       {isFormOpen && (
         <div className="bg-white border-2 border-blue-500/30 p-6 rounded-3xl shadow-xl space-y-4 relative animate-fadeIn">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -228,7 +230,6 @@ export default function AdminManagement() {
               />
             </div>
 
-            {/* AVTOMATIK FORMATLANADIGAN TELEFON INPUTI */}
             <div className="sm:col-span-2">
               <label className="block font-bold text-slate-700 mb-1">Telefon Raqami (+998 XX XXX XX XX)</label>
               <input 
@@ -259,54 +260,58 @@ export default function AdminManagement() {
         </div>
       )}
 
-      {/* MA'MURIYAT XODIMLARI GRID RO'YXATI */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {adminList.map((admin) => (
-          <div key={admin.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
-            <div className="flex justify-between items-start pr-12">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm uppercase">
-                  {admin.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-sm">{admin.name}</h3>
-                  <p className="text-xs text-blue-600 font-semibold">{admin.title}</p>
+      {adminList.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {adminList.map((admin) => (
+            <div key={admin.admin_id || admin.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
+              <div className="flex justify-between items-start pr-12">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm uppercase">
+                    {admin.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">{admin.name}</h3>
+                    <p className="text-xs text-blue-600 font-semibold">{admin.title}</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="absolute top-4 right-4 flex items-center space-x-1">
-              <button
-                onClick={() => handleOpenEditForm(admin)}
-                className="p-2 bg-slate-50 text-slate-500 hover:text-blue-600 rounded-xl transition"
-                title="Tahrirlash"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setDeleteConfirmId(admin.id)}
-                className="p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
-                title="O'chirish"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+              <div className="absolute top-4 right-4 flex items-center space-x-1">
+                <button
+                  onClick={() => handleOpenEditForm(admin)}
+                  className="p-2 bg-slate-50 text-slate-500 hover:text-blue-600 rounded-xl transition"
+                  title="Tahrirlash"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setDeleteConfirmId(admin.admin_id)}
+                  className="p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
+                  title="O'chirish"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
 
-            <div className="text-xs space-y-1.5 text-slate-600 pt-2 border-t border-slate-100 font-medium">
-              <p className="flex items-center space-x-2">
-                <Phone className="w-3.5 h-3.5 text-blue-500" />
-                <span>Tel: <strong>{admin.phone}</strong></span>
-              </p>
-              <p className="flex items-center space-x-2">
-                <Award className="w-3.5 h-3.5 text-amber-500" />
-                <span>Tajriba: <strong>{admin.experience}</strong></span>
-              </p>
+              <div className="text-xs space-y-1.5 text-slate-600 pt-2 border-t border-slate-100 font-medium">
+                <p className="flex items-center space-x-2">
+                  <Phone className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Tel: <strong>{admin.phone}</strong></span>
+                </p>
+                <p className="flex items-center space-x-2">
+                  <Award className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Tajriba: <strong>{admin.experience}</strong></span>
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 bg-white border border-slate-200/80 rounded-3xl p-6">
+          <p className="text-sm font-bold text-slate-500">Hozircha ma'muriyat xodimlari kiritilmagan.</p>
+        </div>
+      )}
 
-      {/* O'CHIRISHNI TASDIQLASH MODALI */}
       {deleteConfirmId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
