@@ -223,3 +223,18 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server ${PORT}-portda ishlamoqda!`));
+
+// --- 7. FRONTEND (REACT) FAYLLARINI XAVFSIZ ULASH ---
+const distPath = path.join(__dirname, 'dist');
+const fs = require('fs');
+
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.send("EduPulse Backend ishlamoqda, lekin frontend (dist papkasi) topilmadi!");
+  });
+}
