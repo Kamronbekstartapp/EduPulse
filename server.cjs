@@ -11,7 +11,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Barcha jadvallarni yaratish
+// Barcha jadvallarni yaratish (shu jumladan o'quvchilar va kitob-daftar yozuvlari)
 const initDb = async () => {
   try {
     await pool.query(`
@@ -49,6 +49,13 @@ const initDb = async () => {
         teacher TEXT,
         teacher_phone TEXT
       );
+      CREATE TABLE IF NOT EXISTS students (
+        id SERIAL PRIMARY KEY,
+        student_id VARCHAR(50) UNIQUE,
+        full_name TEXT,
+        grade TEXT,
+        phone TEXT
+      );
       CREATE TABLE IF NOT EXISTS attendance (
         id SERIAL PRIMARY KEY,
         record_key VARCHAR(100) UNIQUE,
@@ -65,8 +72,13 @@ const initDb = async () => {
         end_time TEXT,
         lesson_number INT
       );
+      CREATE TABLE IF NOT EXISTS book_notebook_records (
+        id SERIAL PRIMARY KEY,
+        record_key VARCHAR(150) UNIQUE,
+        data JSONB
+      );
     `);
-    console.log("Barcha jadvallar bazada muvaffaqiyatli yaratildi!");
+    console.log("Barcha jadvallar (O'quvchilar va Kitob-daftar bilan birga) muvaffaqiyatli yaratildi!");
   } catch (err) {
     console.error("DB Init Error:", err);
   }
@@ -127,14 +139,31 @@ app.delete('/api/teacher-accounts/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// --- 4. DARS JADVALI (TIMETABLE) API ---
+// --- 4. O'QUVCHILAR API ---
+app.get('/api/students', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM students ORDER BY id ASC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/students', async (req, res) => {
+  const { student_id, full_name, grade, phone } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO students (student_id, full_name, grade, phone) VALUES (\$1, \$2, \$3, \$4) ON CONFLICT (student_id) DO UPDATE SET full_name=\$2, grade=\$3, phone=\$4 RETURNING *',
+      [student_id, full_name, grade, phone]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- 5. DARS JADVALI (TIMETABLE) API ---
 app.get('/api/timetable', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM timetable ORDER BY lesson_number ASC');
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/api/timetable', async (req, res) => {
   const { schedule_id, day_of_week, class_id, subject, teacher_name, start_time, end_time, lesson_number } = req.body;
   try {
@@ -149,11 +178,37 @@ app.post('/api/timetable', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.delete('/api/timetable/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM timetable WHERE schedule_id = \$1', [req.params.id]);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- 6. KITOB VA DAFTAR NAZORATI (BOOK-NOTEBOOK) API ---
+app.get('/api/book-records', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM book_notebook_records');
+    const recordsObj = {};
+    result.rows.forEach(row => {
+      recordsObj[row.record_key] = row.data;
+    });
+    res.json(recordsObj);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/book-records', async (req, res) => {
+  const { record_key, data } = req.body;
+  try {
+    const result = await pool.query(
+      `INSERT INTO book_notebook_records (record_key, data)
+       VALUES ($1, $2)
+       ON CONFLICT (record_key) DO UPDATE 
+       SET data = $2
+       RETURNING *`,
+      [record_key, JSON.stringify(data)]
+    );
+    res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -1,19 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles } from 'lucide-react';
+import { CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles } from 'lucide-react';
 
 export default function BookNotebook() {
   const location = useLocation();
   const navigate = useNavigate();
 
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-  const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
+  const [studentsList, setStudentsList] = useState([]);
+  const [records, setRecords] = useState({});
 
   const { classId, subject, teacherName } = location.state || {};
 
   // Bugungi sanani aniqlash (YYYY-MM-DD)
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
+
+  // Serverdan o'quvchilar va saqlangan natijalarni yuklab olish
+  useEffect(() => {
+    // 1. O'quvchilarni serverdan olish
+    fetch('http://localhost:5000/api/students')
+      .then(res => res.json())
+      .then(data => setStudentsList(data))
+      .catch(err => console.error("O'quvchilarni olishda xatolik:", err));
+
+    // 2. Kitob-daftar yozuvlarini serverdan olish
+    fetch('http://localhost:5000/api/book-records')
+      .then(res => res.json())
+      .then(data => setRecords(data))
+      .catch(err => console.error("Yozuvlarni olishda xatolik:", err));
+  }, []);
 
   // Joriy haftaning kunlari va sanalarini hisoblash (Dushanbadan Shanbagacha)
   const getWeekDates = () => {
@@ -45,7 +61,7 @@ export default function BookNotebook() {
         formattedDate,
         isToday: dateStr === todayStr,
         isPast: dateStr < todayStr,
-        isFuture: dateStr > todayStr // Kelgusi kunlarni aniqlash
+        isFuture: dateStr > todayStr
       };
     });
   };
@@ -55,20 +71,15 @@ export default function BookNotebook() {
 
   const recordKey = `${classId}_${subject}_${selectedDay.dateStr}`;
 
-  const [records, setRecords] = useState(() => {
-    const saved = localStorage.getItem('edupulse_book_notebook_records');
-    return saved ? JSON.parse(saved) : {};
-  });
-
   const [toastMsg, setToastMsg] = useState(null);
   const isAdmin = user?.role === 'administrator';
 
-  // Qulflash sharti: Admin bo'lmasa, agar kun o'tgan bo'lsa, kelgusi kun bo'lsa yoki bugun allaqachon saqlanib qulflangan bo'lsa -> Qulflanadi
   const isLocked = !isAdmin && (selectedDay.isPast || selectedDay.isFuture || !!records[recordKey]?.locked);
 
+  // Faqat shu sinf o'quvchilarini filtrlash
   const classStudents = studentsList.filter(s => 
     String(s.grade) === String(classId) || 
-    String(s.classId) === String(classId)
+    String(s.class_id) === String(classId)
   );
 
   const [studentStates, setStudentStates] = useState([]);
@@ -80,14 +91,14 @@ export default function BookNotebook() {
       setStudentStates(savedForThisDay);
     } else {
       const freshStates = classStudents.map(s => ({
-        id: s.id,
-        fullName: s.fullName || s.name,
+        id: s.student_id || s.id,
+        fullName: s.full_name || s.name,
         booksReady: true,
         notebooksReady: true
       }));
       setStudentStates(freshStates);
     }
-  }, [selectedDay.dateStr, recordKey, classId]);
+  }, [selectedDay.dateStr, recordKey, classId, studentsList, records]);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -102,21 +113,33 @@ export default function BookNotebook() {
     );
   };
 
-  const handleSaveDay = () => {
+  // 💾 Natijani serverga (PostgreSQL bazasiga) saqlash
+  const handleSaveDay = async () => {
     if (isLocked) return;
 
-    const newRecords = {
-      ...records,
-      [recordKey]: {
-        locked: true,
-        students: studentStates,
-        savedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }
+    const payloadData = {
+      locked: true,
+      students: studentStates,
+      savedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    setRecords(newRecords);
-    localStorage.setItem('edupulse_book_notebook_records', JSON.stringify(newRecords));
-    showToast(`${selectedDay.name} kunlik kitob va daftar natijalari saqlandi!`);
+    try {
+      const response = await fetch('http://localhost:5000/api/book-records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_key: recordKey, data: payloadData })
+      });
+
+      if (response.ok) {
+        setRecords(prev => ({ ...prev, [recordKey]: payloadData }));
+        showToast(`${selectedDay.name} kunlik natijalar bazaga saqlandi!`);
+      } else {
+        alert("Saqlashda xatolik yuz berdi!");
+      }
+    } catch (err) {
+      console.error("Serverga ulanish xatosi:", err);
+      alert("Server bilan aloqa yo'q!");
+    }
   };
 
   if (!classId || !subject) {
@@ -168,30 +191,18 @@ export default function BookNotebook() {
             className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition shadow-lg shadow-emerald-500/20 active:scale-95 self-start sm:self-auto"
           >
             <Save className="w-4 h-4" />
-            <span>Kunlik Natijani Saqlash</span>
+            <span>Kunlik Natijani Saqlash (DB)</span>
           </button>
         )}
       </div>
 
-      {/* HAFTA KUNLARI VA SANALARI PANELI */}
+      {/* HAFTA KUNLARI PANELI */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm space-y-3">
         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
           <span className="text-xs font-black text-slate-500 uppercase flex items-center space-x-1.5">
             <Calendar className="w-4 h-4 text-blue-600" />
             <span>Haftalik Sana Va Kunlar:</span>
           </span>
-          {selectedDay.isPast && (
-            <span className="text-[11px] font-extrabold text-rose-600 bg-rose-50 px-3 py-1 rounded-xl flex items-center space-x-1">
-              <Lock className="w-3.5 h-3.5" />
-              <span>O'tgan kun (Qulflangan)</span>
-            </span>
-          )}
-          {selectedDay.isFuture && (
-            <span className="text-[11px] font-extrabold text-amber-600 bg-amber-50 px-3 py-1 rounded-xl flex items-center space-x-1">
-              <Lock className="w-3.5 h-3.5" />
-              <span>Kelgusi kun (Hali vaqti kelmadi)</span>
-            </span>
-          )}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
@@ -230,10 +241,10 @@ export default function BookNotebook() {
           <Lock className="w-5 h-5 flex-shrink-0 text-amber-600" />
           <span>
             {selectedDay.isPast 
-              ? "Ushbu kun o'tib ketgani sababli ma'lumotlarni o'zgartirib bo'lmaydi (Faqat ko'rish rejimi)."
+              ? "Ushbu kun o'tib ketgani sababli faqat ko'rish rejimi."
               : selectedDay.isFuture
               ? "Ushbu kun kelgusi kun bo'lgani uchun hali natija kiritib bo'lmaydi."
-              : "Bugungi kunlik kitob va daftar natijalari saqlangan va qulflangan."}
+              : "Bugungi kunlik natijalar saqlangan va qulflangan."}
           </span>
         </div>
       )}
@@ -287,7 +298,7 @@ export default function BookNotebook() {
             ))
           ) : (
             <div className="text-center py-12 text-xs text-slate-400 font-bold">
-              Ushbu sinfda o'quvchilar mavjud emas.
+              Ushbu sinfda o'quvchilar topilmadi.
             </div>
           )}
         </div>
