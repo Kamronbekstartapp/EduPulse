@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Plus, Trash2, BookOpen, User, Lock, CheckCircle2, Sparkles, X, ChevronRight } from 'lucide-react';
+import { 
+  Calendar, 
+  Clock, 
+  Plus, 
+  Trash2, 
+  BookOpen, 
+  User, 
+  Lock, 
+  CheckCircle2, 
+  Sparkles, 
+  X, 
+  ChevronRight,
+  Pencil
+} from 'lucide-react';
 
 const DAYS = [
   { id: 'mon', name: 'Dushanba' },
@@ -11,17 +24,55 @@ const DAYS = [
   { id: 'sat', name: 'Shanba' }
 ];
 
+// Fanlar uchun rangli dizaynlar palitrasi
+const getSubjectBadgeStyle = (subjectName) => {
+  if (!subjectName) return 'bg-slate-100 text-slate-700 border-slate-200';
+  const sub = subjectName.toLowerCase().trim();
+
+  if (sub.includes('matematika') || sub.includes('algebra') || sub.includes('geometriya')) {
+    return 'bg-blue-50 text-blue-700 border-blue-200';
+  } else if (sub.includes('fizika') || sub.includes('astronomiya')) {
+    return 'bg-purple-50 text-purple-700 border-purple-200';
+  } else if (sub.includes('kimyo') || sub.includes('biologiya')) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  } else if (sub.includes('tarix') || sub.includes('huquq') || sub.includes('geografiya')) {
+    return 'bg-amber-50 text-amber-700 border-amber-200';
+  } else if (sub.includes('ingliz') || sub.includes('rus') || sub.includes('til') || sub.includes('adabiyot')) {
+    return 'bg-rose-50 text-rose-700 border-rose-200';
+  } else if (sub.includes('jismoniy') || sub.includes('sport')) {
+    return 'bg-teal-50 text-teal-700 border-teal-200';
+  } else if (sub.includes('informatika') || sub.includes('texnologiya')) {
+    return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+  }
+  return 'bg-slate-100 text-slate-700 border-slate-200';
+};
+
 export default function Timetable() {
   const navigate = useNavigate();
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
   const [classesList] = useState(() => JSON.parse(localStorage.getItem('edupulse_classes') || '[]'));
-  const [teachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
+  
+  // O'qituvchilar ro'yxati
+  const [teachersList, setTeachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
 
   const [activeShift, setActiveShift] = useState(1); // 1 yoki 2
   const [activeDay, setActiveDay] = useState('mon');
   const [timetable, setTimetable] = useState(() => JSON.parse(localStorage.getItem('edupulse_timetable') || '[]'));
 
-  // Tanlangan smenaga mos sinflarni saralash (Sinflar bo'limidan kelayotgan shift qiymati bo'yicha)
+  // Ustozlar o'zgarganda localStorage dan qayta o'qish
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedTeachers = localStorage.getItem('edupulse_teachers');
+      if (savedTeachers) setTeachersList(JSON.parse(savedTeachers));
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    handleStorageChange();
+
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Tanlangan smenaga mos sinflarni saralash
   const currentShiftClasses = classesList.filter(c => {
     const shiftStr = c.shift || '1-smena';
     return activeShift === 1 ? shiftStr.includes('1') : shiftStr.includes('2');
@@ -43,6 +94,7 @@ export default function Timetable() {
   }, [activeShift, classesList]);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingLesson, setEditingLesson] = useState(null); // Tahrirlanayotgan dars
   const [toastMsg, setToastMsg] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -64,7 +116,6 @@ export default function Timetable() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  // Smena o'zgarganda vaqt andozalarini o'zgartirish
   const handleShiftChange = (shift) => {
     setActiveShift(shift);
     setFormData(prev => ({
@@ -74,27 +125,41 @@ export default function Timetable() {
     }));
   };
 
-  // Fan tanlanganda avtomatik o'qituvchini tayinlash
-  const handleSubjectChange = (subjectName) => {
-    if (!subjectName) {
-      setFormData(prev => ({ ...prev, subject: '', teacherName: '' }));
+  const handleTeacherSelect = (teacherFullName) => {
+    if (!teacherFullName) {
+      setFormData(prev => ({ ...prev, teacherName: '', subject: '' }));
       return;
     }
 
-    const foundTeacher = teachersList.find(t => {
-      const teacherSubject = (t.subject || t.fan || '').toLowerCase().trim();
-      const selectedSub = subjectName.toLowerCase().trim();
-      return teacherSubject === selectedSub || teacherSubject.includes(selectedSub);
-    });
+    const selectedTeacher = teachersList.find(t => 
+      (t.fullName || t.full_name || t.name) === teacherFullName
+    );
 
-    const teacherFullName = foundTeacher 
-      ? (foundTeacher.full_name || foundTeacher.fullName || foundTeacher.name)
-      : 'O\'qituvchi biriktirilmagan';
+    const teacherSub = selectedTeacher ? (selectedTeacher.subject || selectedTeacher.fan || '') : '';
 
     setFormData(prev => ({
       ...prev,
-      subject: subjectName,
-      teacherName: teacherFullName
+      teacherName: teacherFullName,
+      subject: prev.subject || teacherSub
+    }));
+  };
+
+  const handleEditTeacherSelect = (teacherFullName) => {
+    if (!teacherFullName) {
+      setEditingLesson(prev => ({ ...prev, teacherName: '', subject: '' }));
+      return;
+    }
+
+    const selectedTeacher = teachersList.find(t => 
+      (t.fullName || t.full_name || t.name) === teacherFullName
+    );
+
+    const teacherSub = selectedTeacher ? (selectedTeacher.subject || selectedTeacher.fan || '') : '';
+
+    setEditingLesson(prev => ({
+      ...prev,
+      teacherName: teacherFullName,
+      subject: prev.subject || teacherSub
     }));
   };
 
@@ -105,8 +170,12 @@ export default function Timetable() {
       alert("Iltimos, dars qo'shish uchun sinfni tanlang!");
       return;
     }
+    if (!formData.teacherName) {
+      alert("Iltimos, o'qituvchini tanlang!");
+      return;
+    }
     if (!formData.subject) {
-      alert("Iltimos, fanni tanlang!");
+      alert("Iltimos, fanni kiriting!");
       return;
     }
 
@@ -132,14 +201,22 @@ export default function Timetable() {
     showToast("Dars jadvaliga muvaffaqiyatli qo'shildi!");
   };
 
+  const handleUpdateLesson = (e) => {
+    e.preventDefault();
+    if (!isAdmin || !editingLesson) return;
+
+    setTimetable(prev => prev.map(item => item.id === editingLesson.id ? editingLesson : item));
+    setEditingLesson(null);
+    showToast("Dars ma'lumotlari yangilandi!");
+  };
+
   const handleDeleteLesson = (id, e) => {
-    e.stopPropagation(); // Dars kartasini bosish hodisasini to'xtatadi
+    e.stopPropagation();
     if (!isAdmin) return;
     setTimetable(prev => prev.filter(item => item.id !== id));
     showToast("Dars jadvaldan o'chirildi!");
   };
 
-  // Faol darsni bosganda Kitob/Daftar tekshirish sahifasiga yo'naltirish
   const handleLessonClick = (lesson) => {
     const isMyLesson = isAdmin || lesson.teacherName?.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
     
@@ -154,12 +231,9 @@ export default function Timetable() {
     }
   };
 
-  // Joriy smena, kun va sinf bo'yicha filtr
   const currentDaySchedule = timetable
     .filter(item => Number(item.shift || 1) === Number(activeShift) && item.day === activeDay && item.classId === selectedClassId)
     .sort((a, b) => a.lessonNumber - b.lessonNumber);
-
-  const availableSubjects = Array.from(new Set(teachersList.map(t => t.subject || t.fan).filter(Boolean)));
 
   return (
     <div className="px-4 py-6 sm:px-8 max-w-7xl mx-auto space-y-6">
@@ -180,7 +254,6 @@ export default function Timetable() {
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">Kitob va daftarni tekshirish uchun o'z darsingiz ustiga bosing</p>
         </div>
 
-        {/* Smena Almashtirish Tugmalari */}
         <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
           <button
             onClick={() => handleShiftChange(1)}
@@ -236,7 +309,6 @@ export default function Timetable() {
           )}
         </div>
 
-        {/* Mobil uchun Dars qo'shish tugmasi */}
         {isAdmin && currentShiftClasses.length > 0 && (
           <button
             onClick={() => setIsAddModalOpen(true)}
@@ -247,7 +319,6 @@ export default function Timetable() {
           </button>
         )}
 
-        {/* Haftaning Kunlarini Tanlash */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 border-t border-slate-100 pt-3">
           {DAYS.map(day => (
             <button
@@ -277,8 +348,8 @@ export default function Timetable() {
         <div className="divide-y divide-slate-100">
           {currentDaySchedule.length > 0 ? (
             currentDaySchedule.map((lesson) => {
-              // Kirgan foydalanuvchining o'qituvchi ekanligini tekshirish
               const isMyLesson = isAdmin || lesson.teacherName?.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
+              const badgeStyle = getSubjectBadgeStyle(lesson.subject);
 
               return (
                 <div 
@@ -297,30 +368,34 @@ export default function Timetable() {
                       {lesson.lessonNumber}-dars
                     </div>
 
-                    <div className="space-y-0.5">
-                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
-                        <BookOpen className={`w-4 h-4 ${isMyLesson ? 'text-blue-600' : 'text-slate-400'}`} />
-                        <span>{lesson.subject}</span>
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        {/* Fanga mos rangli nishon */}
+                        <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-black border shadow-sm ${badgeStyle}`}>
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>{lesson.subject}</span>
+                        </span>
+
                         {isMyLesson && (
                           <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-md font-bold">
                             Sizning darsingiz
                           </span>
                         )}
-                      </h4>
-                      <p className="text-xs text-slate-500 flex items-center space-x-1 font-medium">
+                      </div>
+
+                      <p className="text-xs text-slate-500 flex items-center space-x-1 font-medium pl-0.5">
                         <User className="w-3.5 h-3.5 text-slate-400" />
                         <span>O'qituvchi: <strong className="text-slate-800 font-bold">{lesson.teacherName}</strong></span>
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2 sm:space-x-3">
                     <div className="text-right text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl flex items-center space-x-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
                       <span>{lesson.startTime} - {lesson.endTime}</span>
                     </div>
 
-                    {/* Faol tugma yoki Qulf belgisi */}
                     {isMyLesson ? (
                       <div className="flex items-center text-blue-600 font-bold text-xs bg-blue-100/60 px-3 py-1.5 rounded-xl hover:bg-blue-200 transition">
                         <span>Tekshirish</span>
@@ -332,15 +407,23 @@ export default function Timetable() {
                       </div>
                     )}
 
-                    {/* Admin uchun O'chirish tugmasi */}
                     {isAdmin && (
-                      <button
-                        onClick={(e) => handleDeleteLesson(lesson.id, e)}
-                        className="p-2 text-slate-400 hover:text-rose-600 rounded-xl transition"
-                        title="O'chirish"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setEditingLesson(lesson)}
+                          className="p-2 text-slate-400 hover:text-blue-600 bg-white hover:bg-blue-50 border border-slate-200 rounded-xl transition shadow-sm"
+                          title="Tahrirlash"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteLesson(lesson.id, e)}
+                          className="p-2 text-slate-400 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 rounded-xl transition shadow-sm"
+                          title="O'chirish"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -380,40 +463,43 @@ export default function Timetable() {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Fanni Tanlang</label>
-                  {availableSubjects.length > 0 ? (
-                    <select
-                      value={formData.subject}
-                      onChange={(e) => handleSubjectChange(e.target.value)}
-                      className="w-full p-3 border rounded-xl font-bold bg-white outline-none focus:ring-2 focus:ring-blue-600"
-                    >
-                      <option value="">-- Fan tanlang --</option>
-                      {availableSubjects.map((sub, idx) => (
-                        <option key={idx} value={sub}>{sub}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      required
-                      placeholder="Masalan: Matematika"
-                      value={formData.subject}
-                      onChange={(e) => handleSubjectChange(e.target.value)}
-                      className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
-                    />
-                  )}
+                  <label className="block font-bold text-slate-700 mb-1">Fanni Kiriting/Tanlang</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Masalan: Matematika"
+                    value={formData.subject}
+                    onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
+                  />
                 </div>
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Biriktirilgan O'qituvchi</label>
-                <input
-                  type="text"
-                  readOnly
-                  placeholder="Fan tanlansa avtomatik chiqadi"
+                <select
+                  required
                   value={formData.teacherName}
-                  className="w-full p-3 border rounded-xl bg-slate-100 text-blue-700 font-extrabold outline-none cursor-not-allowed"
-                />
+                  onChange={(e) => handleTeacherSelect(e.target.value)}
+                  className="w-full p-3 border rounded-xl bg-white text-slate-900 font-extrabold outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  {teachersList.length === 0 ? (
+                    <option value="" disabled>Saytda hali fan o'qituvchisi yo'q</option>
+                  ) : (
+                    <>
+                      <option value="">-- O'qituvchini tanlang --</option>
+                      {teachersList.map((t) => {
+                        const name = t.fullName || t.full_name || t.name;
+                        const sub = t.subject || t.fan ? `(${t.subject || t.fan})` : '(Fan ko\'rsatilmagan)';
+                        return (
+                          <option key={t.id || name} value={name}>
+                            {name} {sub}
+                          </option>
+                        );
+                      })}
+                    </>
+                  )}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -442,9 +528,105 @@ export default function Timetable() {
 
               <button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition active:scale-95"
+                disabled={teachersList.length === 0}
+                className={`w-full font-bold py-3 rounded-xl shadow-md transition active:scale-95 text-white ${
+                  teachersList.length === 0 ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
                 Darsni Saqlash
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN UCHUN DARSNI TAHRIRLASH MODALI */}
+      {isAdmin && editingLesson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
+            <button onClick={() => setEditingLesson(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-lg font-black text-slate-900">Dars Ma'lumotlarini Tahrirlash</h3>
+
+            <form onSubmit={handleUpdateLesson} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Dars Soati</label>
+                  <select
+                    value={editingLesson.lessonNumber}
+                    onChange={(e) => setEditingLesson({ ...editingLesson, lessonNumber: Number(e.target.value) })}
+                    className="w-full p-3 border rounded-xl font-bold bg-white outline-none focus:ring-2 focus:ring-blue-600"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7].map(num => (
+                      <option key={num} value={num}>{num}-dars</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Fanni O'zgartirish</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingLesson.subject}
+                    onChange={(e) => setEditingLesson({ ...editingLesson, subject: e.target.value })}
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Biriktirilgan O'qituvchi</label>
+                <select
+                  required
+                  value={editingLesson.teacherName}
+                  onChange={(e) => handleEditTeacherSelect(e.target.value)}
+                  className="w-full p-3 border rounded-xl bg-white text-slate-900 font-extrabold outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="">-- O'qituvchini tanlang --</option>
+                  {teachersList.map((t) => {
+                    const name = t.fullName || t.full_name || t.name;
+                    const sub = t.subject || t.fan ? `(${t.subject || t.fan})` : '(Fan ko\'rsatilmagan)';
+                    return (
+                      <option key={t.id || name} value={name}>
+                        {name} {sub}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Boshlanish Vaqti</label>
+                  <input
+                    type="time"
+                    required
+                    value={editingLesson.startTime}
+                    onChange={(e) => setEditingLesson({ ...editingLesson, startTime: e.target.value })}
+                    className="w-full p-3 border rounded-xl font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tugash Vaqti</label>
+                  <input
+                    type="time"
+                    required
+                    value={editingLesson.endTime}
+                    onChange={(e) => setEditingLesson({ ...editingLesson, endTime: e.target.value })}
+                    className="w-full p-3 border rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition active:scale-95"
+              >
+                O'zgarishlarni Saqlash
               </button>
             </form>
           </div>

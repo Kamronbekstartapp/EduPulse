@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles } from 'lucide-react';
+import { CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles, Users } from 'lucide-react';
 
 export default function BookNotebook() {
   const location = useLocation();
@@ -9,6 +9,7 @@ export default function BookNotebook() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
   const [studentsList, setStudentsList] = useState([]);
   const [records, setRecords] = useState({});
+  const [timetable, setTimetable] = useState([]);
 
   const { classId, subject, teacherName } = location.state || {};
 
@@ -16,7 +17,7 @@ export default function BookNotebook() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  // Serverdan o'quvchilar va saqlangan natijalarni yuklab olish
+  // Serverdan va localStorage'dan ma'lumotlarni yuklab olish
   useEffect(() => {
     // 1. O'quvchilarni serverdan olish
     fetch('http://localhost:5000/api/students')
@@ -29,6 +30,10 @@ export default function BookNotebook() {
       .then(res => res.json())
       .then(data => setRecords(data))
       .catch(err => console.error("Yozuvlarni olishda xatolik:", err));
+
+    // 3. Dars jadvalini localStorage'dan (yoki serverdan) olish
+    const savedTimetable = JSON.parse(localStorage.getItem('edupulse_timetable') || '[]');
+    setTimetable(savedTimetable);
   }, []);
 
   // Joriy haftaning kunlari va sanalarini hisoblash (Dushanbadan Shanbagacha)
@@ -69,6 +74,15 @@ export default function BookNotebook() {
   const weekDays = getWeekDates();
   const [selectedDay, setSelectedDay] = useState(() => weekDays.find(d => d.isToday) || weekDays[0]);
 
+  // Dars jadvalidan ushbu sinf va fan qaysi kunlarga qo'yilganini aniqlash
+  const scheduledDayIds = timetable.filter(item => 
+    String(item.classId) === String(classId) && 
+    item.subject?.toLowerCase().trim() === subject?.toLowerCase().trim()
+  ).map(item => item.day);
+
+  // Tanlangan kunda ushbu fan dars jadvalida bormi?
+  const hasLessonOnSelectedDay = scheduledDayIds.includes(selectedDay.id);
+
   const recordKey = `${classId}_${subject}_${selectedDay.dateStr}`;
 
   const [toastMsg, setToastMsg] = useState(null);
@@ -92,7 +106,7 @@ export default function BookNotebook() {
     } else {
       const freshStates = classStudents.map(s => ({
         id: s.student_id || s.id,
-        fullName: s.full_name || s.name,
+        fullName: s.full_name || s.fullName || s.name,
         booksReady: true,
         notebooksReady: true
       }));
@@ -106,7 +120,7 @@ export default function BookNotebook() {
   };
 
   const handleToggle = (studentId, field) => {
-    if (isLocked) return;
+    if (isLocked || !hasLessonOnSelectedDay) return;
 
     setStudentStates(prev =>
       prev.map(s => String(s.id) === String(studentId) ? { ...s, [field]: !s[field] } : s)
@@ -115,7 +129,7 @@ export default function BookNotebook() {
 
   // 💾 Natijani serverga (PostgreSQL bazasiga) saqlash
   const handleSaveDay = async () => {
-    if (isLocked) return;
+    if (isLocked || !hasLessonOnSelectedDay) return;
 
     const payloadData = {
       locked: true,
@@ -185,7 +199,7 @@ export default function BookNotebook() {
           </p>
         </div>
 
-        {!isLocked && selectedDay.isToday && (
+        {!isLocked && selectedDay.isToday && hasLessonOnSelectedDay && (
           <button
             onClick={handleSaveDay}
             className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition shadow-lg shadow-emerald-500/20 active:scale-95 self-start sm:self-auto"
@@ -208,6 +222,7 @@ export default function BookNotebook() {
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
           {weekDays.map((day) => {
             const isSelected = selectedDay.id === day.id;
+            const isScheduled = scheduledDayIds.includes(day.id);
 
             return (
               <button
@@ -216,9 +231,9 @@ export default function BookNotebook() {
                 className={`p-3 rounded-2xl text-center transition relative border ${
                   isSelected 
                     ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20' 
-                    : day.isPast || day.isFuture
-                    ? 'bg-slate-50 text-slate-400 border-slate-200/60'
-                    : 'bg-slate-50/80 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    : isScheduled
+                    ? 'bg-blue-50/70 text-blue-900 border-blue-200 hover:bg-blue-100'
+                    : 'bg-slate-50 text-slate-400 border-slate-200/60 hover:bg-slate-100'
                 }`}
               >
                 <p className="text-xs font-extrabold">{day.name}</p>
@@ -226,8 +241,9 @@ export default function BookNotebook() {
                   {day.formattedDate}
                 </p>
 
-                {day.isToday && (
-                  <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-blue-600'}`} />
+                {/* Shu kuni dars bo'lsa ko'rsatkich nuqta */}
+                {isScheduled && (
+                  <span className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-blue-600'}`} />
                 )}
               </button>
             );
@@ -235,8 +251,8 @@ export default function BookNotebook() {
         </div>
       </div>
 
-      {/* Qulflanganlik haqida ogohlantirish */}
-      {isLocked && (
+      {/* Qulflanganlik haqida ogohlantirish (Dars bor kun uchun) */}
+      {isLocked && hasLessonOnSelectedDay && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl flex items-center space-x-3 text-xs font-bold">
           <Lock className="w-5 h-5 flex-shrink-0 text-amber-600" />
           <span>
@@ -249,59 +265,75 @@ export default function BookNotebook() {
         </div>
       )}
 
-      {/* O'quvchilar Ro'yxati */}
+      {/* O'QUVCHILAR RO'YXATI YOKI DARSI YO'Q KUN OGOHLANTIRISHI */}
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
           <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
             {selectedDay.name} ({selectedDay.formattedDate}) — O'quvchilar Tayyorgarligi
           </h3>
           <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-xl">
-            Jami: {studentStates.length} nafar
+            Jami: {hasLessonOnSelectedDay ? studentStates.length : 0} nafar
           </span>
         </div>
 
-        <div className="divide-y divide-slate-100">
-          {studentStates.length > 0 ? (
-            studentStates.map((student) => (
-              <div key={student.id} className="p-4 flex items-center justify-between gap-3">
-                <div>
-                  <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{student.fullName}</h4>
-                  <p className="text-[10px] text-slate-400">ID: {student.id}</p>
-                </div>
+        {hasLessonOnSelectedDay ? (
+          <div className="divide-y divide-slate-100">
+            {studentStates.length > 0 ? (
+              studentStates.map((student) => (
+                <div key={student.id} className="p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{student.fullName}</h4>
+                    <p className="text-[10px] text-slate-400">ID: {student.id}</p>
+                  </div>
 
-                <div className="flex items-center space-x-2 text-xs">
-                  <button
-                    disabled={isLocked}
-                    onClick={() => handleToggle(student.id, 'booksReady')}
-                    className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                      student.booksReady 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                        : 'bg-rose-50 text-rose-700 border border-rose-200'
-                    } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
-                  >
-                    Kitob: {student.booksReady ? 'Bor' : "Yo'q"}
-                  </button>
+                  <div className="flex items-center space-x-2 text-xs">
+                    <button
+                      disabled={isLocked}
+                      onClick={() => handleToggle(student.id, 'booksReady')}
+                      className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
+                        student.booksReady 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      Kitob: {student.booksReady ? 'Bor' : "Yo'q"}
+                    </button>
 
-                  <button
-                    disabled={isLocked}
-                    onClick={() => handleToggle(student.id, 'notebooksReady')}
-                    className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                      student.notebooksReady 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                        : 'bg-rose-50 text-rose-700 border border-rose-200'
-                    } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
-                  >
-                    Daftar: {student.notebooksReady ? 'Bor' : "Yo'q"}
-                  </button>
+                    <button
+                      disabled={isLocked}
+                      onClick={() => handleToggle(student.id, 'notebooksReady')}
+                      className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
+                        student.notebooksReady 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      Daftar: {student.notebooksReady ? 'Bor' : "Yo'q"}
+                    </button>
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="text-center py-12 text-xs text-slate-400 font-bold space-y-2">
+                <Users className="w-10 h-10 mx-auto text-slate-300" />
+                <p>Ushbu sinfda o'quvchilar topilmadi.</p>
               </div>
-            ))
-          ) : (
-            <div className="text-center py-12 text-xs text-slate-400 font-bold">
-              Ushbu sinfda o'quvchilar topilmadi.
+            )}
+          </div>
+        ) : (
+          /* DARSI BO'LMAGAN KUN UCHUN EKRAN */
+          <div className="text-center py-16 space-y-3 bg-amber-50/40 rounded-b-3xl p-6">
+            <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
+            <div className="space-y-1">
+              <h4 className="text-sm font-black text-slate-900">
+                Ushbu kunda ({selectedDay.name}) {classId} sinfida {subject} darsi belgilanmagan!
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
+                Dars jadvalida {subject} fani ushbu kunga qo'yilmagan. Yuqoridagi belgilangan kunlardan birini tanlang.
+              </p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

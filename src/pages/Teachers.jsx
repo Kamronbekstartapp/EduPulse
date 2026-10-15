@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import {
-  UserPlus,
-  Phone,
-  X,
-  CheckCircle2,
+import { 
+  UserPlus, 
+  Phone, 
+  X, 
+  CheckCircle2, 
   AlertTriangle,
-  Trash2
+  Trash2,
+  HelpCircle
 } from 'lucide-react';
 
 const formatPhoneNumber = (value) => {
@@ -47,6 +48,9 @@ export default function Teachers() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const [classError, setClassError] = useState('');
+
+  // Ikkinchi fanni biriktirishni tasdiqlash modali holati
+  const [confirmSubjectModal, setConfirmSubjectModal] = useState(null);
 
   const [newTeacher, setNewTeacher] = useState({
     fullName: '',
@@ -103,23 +107,38 @@ export default function Teachers() {
       return;
     }
 
-    // 2. Ustoz allaqachon qo'shilganmi tekshirish
-    const isAlreadyAdded = teachersList.some(t => t.fullName && t.fullName.trim().toLowerCase() === inputNameClean);
-    if (isAlreadyAdded) {
-      setClassError("Ushbu ustoz allaqachon o'qituvchilar ro'yxatiga qo'shilgan!");
-      return;
-    }
-
     const needsClass = newTeacher.teacherType === 'class_head' || newTeacher.teacherType === 'both';
     const needsSubject = newTeacher.teacherType === 'subject_teacher' || newTeacher.teacherType === 'both';
 
-    if (needsClass && !newTeacher.assignedClass) {
-      setClassError("Iltimos, biriktiriladigan sinfni tanlang!");
+    if (needsSubject && !newTeacher.subject.trim()) {
+      setClassError("Iltimos, o'qitiladigan fanni yozing!");
       return;
     }
 
-    if (needsSubject && !newTeacher.subject.trim()) {
-      setClassError("Iltimos, o'qitiladigan fanni yozing!");
+    // 2. Ustoz allaqachon ro'yxatda bormi tekshirish
+    const existingTeacher = teachersList.find(t => t.fullName && t.fullName.trim().toLowerCase() === inputNameClean);
+
+    if (existingTeacher) {
+      const existingSubjects = (existingTeacher.subject || '').split(',').map(s => s.trim().toLowerCase());
+      const newSubClean = newTeacher.subject.trim().toLowerCase();
+
+      // Agar kiritilgan fan ham allaqachon mavjud bo'lsa
+      if (existingSubjects.includes(newSubClean)) {
+        setClassError("Ushbu ustoz allaqachon ushbu fandan dars beruvchi bo'lib qo'shilgan!");
+        return;
+      } else {
+        // Ustoz bor, lekin fani boshqacha -> Tasdiqlash modalini ochamiz
+        setConfirmSubjectModal({
+          existingTeacher,
+          newSubject: newTeacher.subject.trim(),
+          newTeacherData: newTeacher
+        });
+        return;
+      }
+    }
+
+    if (needsClass && !newTeacher.assignedClass) {
+      setClassError("Iltimos, biriktiriladigan sinfni tanlang!");
       return;
     }
 
@@ -155,6 +174,34 @@ export default function Teachers() {
     setNewTeacher({ fullName: '', phone: '+998 ', teacherType: 'class_head', assignedClass: '', subject: '' });
     setIsAddOpen(false);
     showToast("Yangi o'qituvchi muvaffaqiyatli qo'shildi!");
+  };
+
+  // Ikkinchi fanni tasdiqlash (HA tugmasi)
+  const handleConfirmMultiSubject = () => {
+    if (!confirmSubjectModal) return;
+
+    const { existingTeacher, newSubject, newTeacherData } = confirmSubjectModal;
+
+    const combinedSubject = existingTeacher.subject 
+      ? `${existingTeacher.subject}, ${newSubject}`
+      : newSubject;
+
+    setTeachersList(prev => prev.map(t => {
+      if (t.id === existingTeacher.id) {
+        return {
+          ...t,
+          subject: combinedSubject,
+          assignedClass: newTeacherData.assignedClass || t.assignedClass,
+          teacherType: 'both'
+        };
+      }
+      return t;
+    }));
+
+    setConfirmSubjectModal(null);
+    setIsAddOpen(false);
+    setNewTeacher({ fullName: '', phone: '+998 ', teacherType: 'class_head', assignedClass: '', subject: '' });
+    showToast(`${existingTeacher.fullName} ga ikkinchi fan (${newSubject}) muvaffaqiyatli biriktirildi!`);
   };
 
   const handleDeleteTeacher = (id) => {
@@ -246,14 +293,14 @@ export default function Teachers() {
               </p>
 
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {(tch.teacherType === 'class_head' || tch.teacherType === 'both') && (
+                {(tch.teacherType === 'class_head' || tch.teacherType === 'both') && tch.assignedClass && (
                   <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-lg">
-                    Sinf rahbari: {tch.assignedClass || 'Biriktirilmagan'}
+                    Sinf rahbari: {tch.assignedClass}
                   </span>
                 )}
-                {(tch.teacherType === 'subject_teacher' || tch.teacherType === 'both') && (
+                {(tch.teacherType === 'subject_teacher' || tch.teacherType === 'both') && tch.subject && (
                   <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-lg">
-                    Fan: {tch.subject || 'Biriktirilmagan'}
+                    Fan: {tch.subject}
                   </span>
                 )}
               </div>
@@ -280,7 +327,6 @@ export default function Teachers() {
             <form onSubmit={handleAddTeacher} className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Ismi va Familiyasi</label>
-                {/* Datalist bilan avtomatik to'ldirish menyusi */}
                 <input
                   type="text"
                   required
@@ -372,6 +418,41 @@ export default function Teachers() {
                 O'qituvchini Saqlash
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* IKKINCHI FANNI BIRIKTIRISHNI TASDIQLASH MODALI */}
+      {confirmSubjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4">
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto">
+              <HelpCircle className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-base font-black text-slate-900">Ikkinchi fan biriktirilsinmi?</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                <strong className="text-blue-600">{confirmSubjectModal.existingTeacher.fullName}</strong> allaqachon{' '}
+                <strong className="text-slate-900">"{confirmSubjectModal.existingTeacher.subject || 'Sinf rahbari'}"</strong> sifatida ro'yxatda bor. Unga ikkinchi fan sifatida{' '}
+                <strong className="text-emerald-600">"{confirmSubjectModal.newSubject}"</strong> fanini ham biriktirishni tasdiqlaysizmi?
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setConfirmSubjectModal(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition"
+              >
+                Yo'q, Bekor qilish
+              </button>
+              <button
+                onClick={handleConfirmMultiSubject}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-md shadow-blue-500/20"
+              >
+                Ha, Biriktirish
+              </button>
+            </div>
           </div>
         </div>
       )}
