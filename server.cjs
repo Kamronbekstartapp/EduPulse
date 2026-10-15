@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -11,7 +12,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Barcha jadvallarni yaratish (shu jumladan o'quvchilar va kitob-daftar yozuvlari)
+// Barcha jadvallarni yaratish
 const initDb = async () => {
   try {
     await pool.query(`
@@ -78,7 +79,7 @@ const initDb = async () => {
         data JSONB
       );
     `);
-    console.log("Barcha jadvallar (O'quvchilar va Kitob-daftar bilan birga) muvaffaqiyatli yaratildi!");
+    console.log("Barcha jadvallar bazada muvaffaqiyatli yaratildi!");
   } catch (err) {
     console.error("DB Init Error:", err);
   }
@@ -93,13 +94,13 @@ app.get('/api/admins', async (req, res) => {
 app.post('/api/admins', async (req, res) => {
   const { admin_id, name, title, category, phone, experience } = req.body;
   const result = await pool.query(
-    'INSERT INTO school_admins (admin_id, name, title, category, phone, experience) VALUES (\$1, \$2, \$3, \$4, \$5, \$6) ON CONFLICT (admin_id) DO UPDATE SET name=\$2, title=\$3, category=\$4, phone=\$5, experience=\$6 RETURNING *',
+    'INSERT INTO school_admins (admin_id, name, title, category, phone, experience) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (admin_id) DO UPDATE SET name=$2, title=$3, category=$4, phone=$5, experience=$6 RETURNING *',
     [admin_id, name, title, category, phone, experience]
   );
   res.json(result.rows[0]);
 });
 app.delete('/api/admins/:id', async (req, res) => {
-  await pool.query('DELETE FROM school_admins WHERE admin_id = \$1', [req.params.id]);
+  await pool.query('DELETE FROM school_admins WHERE admin_id = $1', [req.params.id]);
   res.json({ success: true });
 });
 
@@ -111,13 +112,13 @@ app.get('/api/teachers', async (req, res) => {
 app.post('/api/teachers', async (req, res) => {
   const { teacher_id, full_name, phone, teacher_type, assigned_class, subject } = req.body;
   const result = await pool.query(
-    'INSERT INTO teachers (teacher_id, full_name, phone, teacher_type, assigned_class, subject) VALUES (\$1, \$2, \$3, \$4, \$5, \$6) ON CONFLICT (teacher_id) DO UPDATE SET full_name=\$2, phone=\$3, teacher_type=\$4, assigned_class=\$5, subject=\$6 RETURNING *',
+    'INSERT INTO teachers (teacher_id, full_name, phone, teacher_type, assigned_class, subject) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (teacher_id) DO UPDATE SET full_name=$2, phone=$3, teacher_type=$4, assigned_class=$5, subject=$6 RETURNING *',
     [teacher_id, full_name, phone, teacher_type, assigned_class, subject]
   );
   res.json(result.rows[0]);
 });
 app.delete('/api/teachers/:id', async (req, res) => {
-  await pool.query('DELETE FROM teachers WHERE teacher_id = \$1', [req.params.id]);
+  await pool.query('DELETE FROM teachers WHERE teacher_id = $1', [req.params.id]);
   res.json({ success: true });
 });
 
@@ -129,13 +130,13 @@ app.get('/api/teacher-accounts', async (req, res) => {
 app.post('/api/teacher-accounts', async (req, res) => {
   const { acc_id, full_name, username, password, position, can_download_report } = req.body;
   const result = await pool.query(
-    'INSERT INTO teacher_accounts (acc_id, full_name, username, password, position, can_download_report) VALUES (\$1, \$2, \$3, \$4, \$5, \$6) ON CONFLICT (acc_id) DO UPDATE SET full_name=\$2, username=\$3, password=\$4, position=\$5, can_download_report=\$6 RETURNING *',
+    'INSERT INTO teacher_accounts (acc_id, full_name, username, password, position, can_download_report) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (acc_id) DO UPDATE SET full_name=$2, username=$3, password=$4, position=$5, can_download_report=$6 RETURNING *',
     [acc_id, full_name, username, password, position, can_download_report]
   );
   res.json(result.rows[0]);
 });
 app.delete('/api/teacher-accounts/:id', async (req, res) => {
-  await pool.query('DELETE FROM teacher_accounts WHERE acc_id = \$1', [req.params.id]);
+  await pool.query('DELETE FROM teacher_accounts WHERE acc_id = $1', [req.params.id]);
   res.json({ success: true });
 });
 
@@ -150,7 +151,7 @@ app.post('/api/students', async (req, res) => {
   const { student_id, full_name, grade, phone } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO students (student_id, full_name, grade, phone) VALUES (\$1, \$2, \$3, \$4) ON CONFLICT (student_id) DO UPDATE SET full_name=\$2, grade=\$3, phone=\$4 RETURNING *',
+      'INSERT INTO students (student_id, full_name, grade, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (student_id) DO UPDATE SET full_name=$2, grade=$3, phone=$4 RETURNING *',
       [student_id, full_name, grade, phone]
     );
     res.json(result.rows[0]);
@@ -180,12 +181,12 @@ app.post('/api/timetable', async (req, res) => {
 });
 app.delete('/api/timetable/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM timetable WHERE schedule_id = \$1', [req.params.id]);
+    await pool.query('DELETE FROM timetable WHERE schedule_id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- 6. KITOB VA DAFTAR NAZORATI (BOOK-NOTEBOOK) API ---
+// --- 6. KITOB VA DAFTAR NAZORATI API ---
 app.get('/api/book-records', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM book_notebook_records');
@@ -208,8 +209,16 @@ app.post('/api/book-records', async (req, res) => {
        RETURNING *`,
       [record_key, JSON.stringify(data)]
     );
-    res.json(result.rows[0]);
+  
+   res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- 7. FRONTEND (REACT) FAYLLARINI ULASH (Cannot GET / xatoligini oldini olish uchun) ---
+app.use(express.static(path.join(__dirname, 'dist')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;
