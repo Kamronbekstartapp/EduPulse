@@ -214,18 +214,27 @@ app.post('/api/book-records', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
 // --- 7. FRONTEND (REACT) FAYLLARINI XAVFSIZ ULASH ---
 const distPath = path.join(__dirname, 'dist');
 const fs = require('fs');
 
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  // Yangi Express talabiga ko'ra catch-all route (.*) ko'rinishida yoziladi
   app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
+  // Agar dist papkasi bo'lmasa, server qulab tushmaydi, shunchaki xabar beradi
   app.get('/', (req, res) => {
-    res.send("EduPulse Backend ishlamoqda, lekin frontend (dist papkasi) topilmadi!");
+    res.send("EduPulse Server ishlamoqda! (Frontend dist papkasi topilmadi, iltimos npm run build qiling)");
   });
 }
+
+// PORT ni Railway beradigan portga moslash
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server ${PORT}-portda muvaffaqiyatli ishga tushdi!`);
+});
+
+
