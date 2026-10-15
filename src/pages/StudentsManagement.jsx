@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Users, 
-  UserPlus, 
-  FolderPlus, 
-  ChevronRight, 
-  X, 
+import {
+  Users,
+  UserPlus,
+  FolderPlus,
+  ChevronRight,
+  X,
   CheckCircle2,
   Pencil,
   Trash2,
@@ -30,7 +30,7 @@ const formatPhoneNumber = (value) => {
 const defaultClasses = [
   { id: '9-A', name: '9-A sinf', teacher: 'Azizov Murod', teacherPhone: '+998 90 111 22 33' },
   { id: '9-B', name: '9-B sinf', teacher: 'Karimova Zilola', teacherPhone: '+998 91 222 33 44' },
-  { id: '10-A', name: '10-A sinf', teacher: 'Tursunov Dilshod', teacherPhone: '+998 93 333 44 55' },
+  { id: '10-A', name: '10-A sinf', teacher: 'Tayinlanmagan', teacherPhone: '+998 93 333 44 55' },
 ];
 
 const defaultStudents = [
@@ -51,6 +51,7 @@ const defaultStudents = [
 export default function StudentsManagement() {
   const navigate = useNavigate();
 
+  const [teachersList, setTeachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
   const [classesList, setClassesList] = useState(() => {
     const saved = localStorage.getItem('edupulse_classes');
     return saved ? JSON.parse(saved) : defaultClasses;
@@ -62,6 +63,21 @@ export default function StudentsManagement() {
   });
 
   useEffect(() => {
+    const handleStorageChange = () => {
+      const savedClasses = localStorage.getItem('edupulse_classes');
+      if (savedClasses) setClassesList(JSON.parse(savedClasses));
+
+      const savedTeachers = localStorage.getItem('edupulse_teachers');
+      if (savedTeachers) setTeachersList(JSON.parse(savedTeachers));
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    handleStorageChange();
+
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem('edupulse_classes', JSON.stringify(classesList));
   }, [classesList]);
 
@@ -69,11 +85,10 @@ export default function StudentsManagement() {
     localStorage.setItem('edupulse_students', JSON.stringify(studentsList));
   }, [studentsList]);
 
-  // Modal oynalar holati
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
-  const [editingClass, setEditingClass] = useState(null); // Tahrirlanayotgan sinf
-  const [deletingClassId, setDeletingClassId] = useState(null); // O'chirilayotgan sinf ID si
+  const [editingClass, setEditingClass] = useState(null);
+  const [deletingClassId, setDeletingClassId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
   const [newStudent, setNewStudent] = useState({
@@ -92,6 +107,24 @@ export default function StudentsManagement() {
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleNewClassTeacherSelect = (teacherFullName) => {
+    const selectedTeacher = teachersList.find(t => t.fullName === teacherFullName);
+    setNewClass(prev => ({
+      ...prev,
+      teacherName: teacherFullName || 'Tayinlanmagan',
+      teacherPhone: selectedTeacher && selectedTeacher.phone ? selectedTeacher.phone : '+998 '
+    }));
+  };
+
+  const handleEditClassTeacherSelect = (teacherFullName) => {
+    const selectedTeacher = teachersList.find(t => t.fullName === teacherFullName);
+    setEditingClass(prev => ({
+      ...prev,
+      teacher: teacherFullName || 'Tayinlanmagan',
+      teacherPhone: selectedTeacher && selectedTeacher.phone ? selectedTeacher.phone : '+998 '
+    }));
   };
 
   const handleAddStudent = (e) => {
@@ -129,7 +162,6 @@ export default function StudentsManagement() {
     showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
   };
 
-  // Sinfni Tahrirlash (Edit)
   const handleUpdateClass = (e) => {
     e.preventDefault();
     setClassesList(prev => prev.map(c => c.id === editingClass.id ? editingClass : c));
@@ -137,7 +169,6 @@ export default function StudentsManagement() {
     showToast("Sinf ma'lumotlari yangilandi!");
   };
 
-  // Sinfni O'chirish (Delete)
   const handleDeleteClass = () => {
     setClassesList(prev => prev.filter(c => c.id !== deletingClassId));
     setStudentsList(prev => prev.filter(s => s.grade !== deletingClassId));
@@ -183,16 +214,23 @@ export default function StudentsManagement() {
         </div>
       </div>
 
-      {/* Sinflar Kartochkalari */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {classesList.map((cls) => {
           const count = studentsList.filter(s => s.grade === cls.id).length;
+
+          // Ustoz bazada haqiqatdan ham bormi yoki o'chib ketganmi tekshiramiz
+          const isTeacherExists = teachersList.some(
+            t => t.fullName && cls.teacher && t.fullName.trim().toLowerCase() === cls.teacher.trim().toLowerCase()
+          );
+          const displayTeacher = (isTeacherExists && cls.teacher && cls.teacher !== 'Tayinlanmagan') ? cls.teacher : 'Tayinlanmagan';
+          const displayPhone = isTeacherExists ? cls.teacherPhone : 'Kiritilmagan';
+
           return (
-            <div 
+            <div
               key={cls.id}
               className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 relative group"
             >
-              <div 
+              <div
                 onClick={() => navigate(`/students-management/${cls.id}`)}
                 className="cursor-pointer space-y-3"
               >
@@ -204,8 +242,13 @@ export default function StudentsManagement() {
 
                 <div className="text-xs text-slate-600 space-y-1">
                   <p>O'quvchilar: <strong className="text-slate-900">{count} ta</strong></p>
-                  <p>Sinf rahbari: <strong className="text-slate-900">{cls.teacher}</strong></p>
-                  <p className="text-slate-400 text-[11px]">{cls.teacherPhone}</p>
+                  <p>
+                    Sinf rahbari:{' '}
+                    <strong className={displayTeacher === 'Tayinlanmagan' ? 'text-rose-500 font-bold' : 'text-slate-900'}>
+                      {displayTeacher}
+                    </strong>
+                  </p>
+                  <p className="text-slate-400 text-[11px]">{displayPhone}</p>
                 </div>
               </div>
 
@@ -230,7 +273,6 @@ export default function StudentsManagement() {
         })}
       </div>
 
-      {/* O'quvchi Qo'shish Modali */}
       {isAddStudentOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -242,8 +284,8 @@ export default function StudentsManagement() {
             <form onSubmit={handleAddStudent} className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Ism va Familiya</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   placeholder="Masalan: Aliyev Samar Botirovich"
                   value={newStudent.fullName}
@@ -254,8 +296,8 @@ export default function StudentsManagement() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Ota-onasi F.I.O.</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Aliyev Botir"
                   value={newStudent.parentName}
                   onChange={(e) => setNewStudent({ ...newStudent, parentName: e.target.value })}
@@ -265,7 +307,7 @@ export default function StudentsManagement() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinfni Tanlang</label>
-                <select 
+                <select
                   value={newStudent.grade}
                   onChange={(e) => setNewStudent({ ...newStudent, grade: e.target.value })}
                   className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
@@ -284,7 +326,6 @@ export default function StudentsManagement() {
         </div>
       )}
 
-      {/* Sinf Qo'shish Modali */}
       {isAddClassOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -297,43 +338,48 @@ export default function StudentsManagement() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Sinf Raqami</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     required
                     placeholder="Masalan: 11"
                     value={newClass.gradeNumber}
                     onChange={(e) => setNewClass({ ...newClass, gradeNumber: e.target.value })}
-                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
                   />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Sinf Harfi</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="Masalan: B"
                     value={newClass.gradeLetter}
                     onChange={(e) => setNewClass({ ...newClass, gradeLetter: e.target.value })}
-                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Ismi-Sharifi</label>
-                <input 
-                  type="text" 
-                  placeholder="Masalan: Murodov Aziz"
+                <select
                   value={newClass.teacherName}
-                  onChange={(e) => setNewClass({ ...newClass, teacherName: e.target.value })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
-                />
+                  onChange={(e) => handleNewClassTeacherSelect(e.target.value)}
+                  className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
+                >
+                  <option value="">Tayinlanmagan</option>
+                  {teachersList.map(t => (
+                    <option key={t.id || t.fullName} value={t.fullName}>
+                      {t.fullName} {t.subject ? `(${t.subject})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Telefoni</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newClass.teacherPhone}
                   onChange={(e) => setNewClass({ ...newClass, teacherPhone: formatPhoneNumber(e.target.value) })}
                   className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
@@ -348,7 +394,6 @@ export default function StudentsManagement() {
         </div>
       )}
 
-      {/* Sinfni Tahrirlash (Edit) Modali */}
       {editingClass && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -360,8 +405,8 @@ export default function StudentsManagement() {
             <form onSubmit={handleUpdateClass} className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Nomi</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   value={editingClass.name}
                   onChange={(e) => setEditingClass({ ...editingClass, name: e.target.value })}
@@ -371,19 +416,24 @@ export default function StudentsManagement() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Ismi-Sharifi</label>
-                <input 
-                  type="text" 
-                  required
-                  value={editingClass.teacher}
-                  onChange={(e) => setEditingClass({ ...editingClass, teacher: e.target.value })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
-                />
+                <select
+                  value={editingClass.teacher || ''}
+                  onChange={(e) => handleEditClassTeacherSelect(e.target.value)}
+                  className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
+                >
+                  <option value="">Tayinlanmagan</option>
+                  {teachersList.map(t => (
+                    <option key={t.id || t.fullName} value={t.fullName}>
+                      {t.fullName} {t.subject ? `(${t.subject})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Telefoni</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={editingClass.teacherPhone}
                   onChange={(e) => setEditingClass({ ...editingClass, teacherPhone: formatPhoneNumber(e.target.value) })}
                   className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
@@ -398,7 +448,6 @@ export default function StudentsManagement() {
         </div>
       )}
 
-      {/* Sinfni O'chirish Tasdiqlash Modali */}
       {deletingClassId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4">

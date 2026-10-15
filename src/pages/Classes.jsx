@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  User, 
-  FolderPlus, 
-  X, 
-  CheckCircle2, 
-  Phone, 
+import {
+  Users,
+  User,
+  FolderPlus,
+  X,
+  CheckCircle2,
+  Phone,
   GraduationCap,
   ChevronRight,
   UserCheck,
@@ -27,21 +27,35 @@ const formatPhoneNumber = (value) => {
 
 const defaultClasses = [
   { id: '9-A', name: '9-A sinf', teacher: 'Usmonova Kamola', shift: '1-smena' },
-  { id: '11-A', name: '11-A sinf', teacher: 'veverv5e', shift: '2-smena' },
+  { id: '11-A', name: '11-A sinf', teacher: 'Tayinlanmagan', shift: '2-smena' },
 ];
 
 export default function Classes() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
   const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
 
+  const [teachersList, setTeachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
   const [classesList, setClassesList] = useState(() => {
     const saved = localStorage.getItem('edupulse_classes');
     return saved ? JSON.parse(saved) : defaultClasses;
   });
 
-  // Active shift filter: 'all', '1-smena', '2-smena'
-  const [activeShiftFilter, setActiveShiftFilter] = useState('all');
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedClasses = localStorage.getItem('edupulse_classes');
+      if (savedClasses) setClassesList(JSON.parse(savedClasses));
 
+      const savedTeachers = localStorage.getItem('edupulse_teachers');
+      if (savedTeachers) setTeachersList(JSON.parse(savedTeachers));
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    handleStorageChange();
+
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  const [activeShiftFilter, setActiveShiftFilter] = useState('all');
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
   const [selectedClassForView, setSelectedClassForView] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
@@ -65,6 +79,15 @@ export default function Classes() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
+  const handleTeacherSelect = (teacherFullName) => {
+    const selectedTeacher = teachersList.find(t => t.fullName === teacherFullName);
+    setNewClass(prev => ({
+      ...prev,
+      teacherName: teacherFullName || 'Tayinlanmagan',
+      teacherPhone: selectedTeacher && selectedTeacher.phone ? selectedTeacher.phone : '+998 '
+    }));
+  };
+
   const handleAddClass = (e) => {
     e.preventDefault();
     if (!newClass.gradeNumber || !newClass.gradeLetter) return;
@@ -84,19 +107,17 @@ export default function Classes() {
     showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
   };
 
-  // Smena bo'yicha filterlangan sinflar
   const filteredClasses = classesList.filter(cls => {
     if (activeShiftFilter === 'all') return true;
     return (cls.shift || '1-smena') === activeShiftFilter;
   });
 
-  const viewStudents = selectedClassForView 
-    ? studentsList.filter(s => s.grade === selectedClassForView.id) 
+  const viewStudents = selectedClassForView
+    ? studentsList.filter(s => s.grade === selectedClassForView.id)
     : [];
 
   return (
     <div className="px-4 sm:px-8 max-w-7xl mx-auto space-y-6 py-4">
-      {/* Toast bildirishnoma */}
       {toastMsg && (
         <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-2 text-xs font-bold animate-bounce">
           <CheckCircle2 className="w-5 h-5 text-emerald-400" />
@@ -104,7 +125,6 @@ export default function Classes() {
         </div>
       )}
 
-      {/* Sarlavha, Smena Filter tugmalari va Sinf Qo'shish Tugmasi */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
@@ -116,41 +136,36 @@ export default function Classes() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* RASMDAGI QIZIL KVADRAT ICHIDAGI SMENA FILTER TUGMALARI */}
           <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
             <button
               onClick={() => setActiveShiftFilter('all')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
-                activeShiftFilter === 'all' 
-                  ? 'bg-white text-slate-900 shadow-sm' 
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${activeShiftFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               Barchasi
             </button>
             <button
               onClick={() => setActiveShiftFilter('1-smena')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
-                activeShiftFilter === '1-smena' 
-                  ? 'bg-blue-600 text-white shadow-md' 
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${activeShiftFilter === '1-smena'
+                  ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               1-smena
             </button>
             <button
               onClick={() => setActiveShiftFilter('2-smena')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
-                activeShiftFilter === '2-smena' 
-                  ? 'bg-indigo-600 text-white shadow-md' 
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${activeShiftFilter === '2-smena'
+                  ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               2-smena
             </button>
           </div>
 
-          {/* ADMIN UCHUN SINF QO'SHISH TUGMASI */}
           {isAdmin && (
             <button
               onClick={() => setIsAddClassOpen(true)}
@@ -163,11 +178,16 @@ export default function Classes() {
         </div>
       </div>
 
-      {/* Sinflar Grid Ro'yxati */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredClasses.length > 0 ? (
           filteredClasses.map((cls) => {
             const studentCount = studentsList.filter(s => s.grade === cls.id).length;
+
+            // Ustoz bazada haqiqatdan ham bormi yoki o'chib ketganmi tekshiramiz
+            const isTeacherExists = teachersList.some(
+              t => t.fullName && cls.teacher && t.fullName.trim().toLowerCase() === cls.teacher.trim().toLowerCase()
+            );
+            const displayTeacher = (isTeacherExists && cls.teacher && cls.teacher !== 'Tayinlanmagan') ? cls.teacher : 'Tayinlanmagan';
 
             return (
               <div
@@ -194,7 +214,12 @@ export default function Classes() {
 
                   <p className="flex items-center space-x-2">
                     <User className="w-4 h-4 text-emerald-500" />
-                    <span>Sinf rahbari: <strong className="text-slate-900">{cls.teacher}</strong></span>
+                    <span>
+                      Sinf rahbari:{' '}
+                      <strong className={displayTeacher === 'Tayinlanmagan' ? 'text-rose-500 font-bold' : 'text-slate-900'}>
+                        {displayTeacher}
+                      </strong>
+                    </span>
                   </p>
                 </div>
               </div>
@@ -207,7 +232,6 @@ export default function Classes() {
         )}
       </div>
 
-      {/* SINFGA BOSGANDA O'QUVCHILAR RO'YXATINI KO'RSATUVCHI MODAL */}
       {selectedClassForView && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 relative max-h-[85vh] flex flex-col">
@@ -225,7 +249,7 @@ export default function Classes() {
               <div>
                 <h3 className="text-lg font-black text-slate-900">{selectedClassForView.name} O'quvchilari</h3>
                 <p className="text-xs text-slate-500">
-                  Rahbar: <strong className="text-slate-800">{selectedClassForView.teacher}</strong> | Smena: <strong className="text-blue-600">{selectedClassForView.shift || '1-smena'}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
+                  Rahbar: <strong className="text-slate-800">{selectedClassForView.teacher || 'Tayinlanmagan'}</strong> | Smena: <strong className="text-blue-600">{selectedClassForView.shift || '1-smena'}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
                 </p>
               </div>
             </div>
@@ -271,7 +295,6 @@ export default function Classes() {
         </div>
       )}
 
-      {/* ADMIN UCHUN SINF QO'SHISH MODAL OYNASI */}
       {isAdmin && isAddClassOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -323,13 +346,18 @@ export default function Classes() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Ism-Familiyasi</label>
-                <input
-                  type="text"
-                  placeholder="Masalan: Murodov Aziz"
+                <select
                   value={newClass.teacherName}
-                  onChange={(e) => setNewClass({ ...newClass, teacherName: e.target.value })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
-                />
+                  onChange={(e) => handleTeacherSelect(e.target.value)}
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold bg-white text-slate-800"
+                >
+                  <option value="">Tayinlanmagan</option>
+                  {teachersList.map((t) => (
+                    <option key={t.id || t.fullName} value={t.fullName}>
+                      {t.fullName} {t.subject ? `(${t.subject})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

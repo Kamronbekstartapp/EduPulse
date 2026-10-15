@@ -1,37 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  UserPlus, 
-  KeyRound, 
-  CheckCircle2, 
-  Trash2, 
-  X, 
-  Eye, 
-  EyeOff, 
+import {
+  UserPlus,
+  KeyRound,
+  CheckCircle2,
+  Trash2,
+  X,
+  Eye,
+  EyeOff,
   Pencil,
   Check,
   FileSpreadsheet
 } from 'lucide-react';
 
-// FAQAT BIRTA HUQUQ: HISOBOTNI YUKLAB OLISH
 const PERMISSION_DOWNLOAD_REPORT = {
   id: 'can_download_school_report',
   label: "Butun maktab bo'yicha hisobotni yuklab olish"
 };
 
 const defaultUsers = [
-  { 
-    id: 'USR-1', 
-    fullName: 'Azizov Murod', 
-    username: 'murod', 
-    password: '123', 
+  {
+    id: 'USR-1',
+    fullName: 'Azizov Murod',
+    username: 'murod',
+    password: '123',
     position: 'Sinf rahbari',
     canDownloadReport: false
   },
-  { 
-    id: 'USR-2', 
-    fullName: 'Karimova Zilola', 
-    username: 'zilola', 
-    password: '123', 
+  {
+    id: 'USR-2',
+    fullName: 'Karimova Zilola',
+    username: 'zilola',
+    password: '123',
     position: 'Zavuch',
     canDownloadReport: true
   }
@@ -114,8 +113,8 @@ export default function TeacherAuthManagement() {
     }
 
     if (editingUserId) {
-      setUserList(prev => prev.map(u => 
-        u.id === editingUserId 
+      setUserList(prev => prev.map(u =>
+        u.id === editingUserId
           ? { ...u, ...formAcc, username: cleanUsername }
           : u
       ));
@@ -133,9 +132,35 @@ export default function TeacherAuthManagement() {
     setIsModalOpen(false);
   };
 
+  // Akkaunt o'chirilganda uning asosiy teachers ma'lumotlari va sinf rahbarligini ham tozalash
   const handleDeleteAccount = (id) => {
+    const accountToDelete = userList.find(u => u.id === id);
+    if (!accountToDelete) return;
+
+    // 1. Akkauntni o'chirish
     setUserList(prev => prev.filter(u => u.id !== id));
-    showToast("Akkount tizimdan o'chirildi!");
+
+    // 2. Asosiy 'edupulse_teachers' ro'yxatidan ham shu ismli ustozni topib o'chirish va sinfini bo'shatish
+    const savedTeachers = JSON.parse(localStorage.getItem('edupulse_teachers') || '[]');
+    const targetTeacher = savedTeachers.find(t => t.fullName.toLowerCase().trim() === accountToDelete.fullName.toLowerCase().trim());
+
+    if (targetTeacher) {
+      const updatedTeachers = savedTeachers.filter(t => t.id !== targetTeacher.id);
+      localStorage.setItem('edupulse_teachers', JSON.stringify(updatedTeachers));
+
+      // Agar uning biriktirilgan sinfi bo'lsa, uni ham classes'dan tozalaymiz
+      if (targetTeacher.assignedClass) {
+        const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
+        const updatedClasses = savedClasses.map(c =>
+          c.id === targetTeacher.assignedClass || c.name === targetTeacher.assignedClass
+            ? { ...c, teacher: '', teacherPhone: '' }
+            : c
+        );
+        localStorage.setItem('edupulse_classes', JSON.stringify(updatedClasses));
+      }
+    }
+
+    showToast("Akkount, o'qituvchi ma'lumotlari va sinf rahbarligi to'liq o'chirildi!");
   };
 
   return (
@@ -147,7 +172,6 @@ export default function TeacherAuthManagement() {
         </div>
       )}
 
-      {/* Sarlavha */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
@@ -167,7 +191,6 @@ export default function TeacherAuthManagement() {
         </button>
       </div>
 
-      {/* Akkountlar Ro'yxati Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {userList.map((acc) => (
           <div key={acc.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
@@ -214,7 +237,7 @@ export default function TeacherAuthManagement() {
                   <span className="font-bold text-emerald-600">
                     {showPasswords[acc.id] ? acc.password : '••••••••'}
                   </span>
-                  <button 
+                  <button
                     type="button"
                     onClick={() => togglePasswordVisibility(acc.id)}
                     className="text-slate-400 hover:text-slate-700"
@@ -224,7 +247,6 @@ export default function TeacherAuthManagement() {
                 </div>
               </div>
 
-              {/* Ruxsat Holati */}
               <div className="pt-2">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hisobot Yuklash Ruxsati:</p>
                 <div>
@@ -246,7 +268,6 @@ export default function TeacherAuthManagement() {
         ))}
       </div>
 
-      {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -266,8 +287,8 @@ export default function TeacherAuthManagement() {
             <form onSubmit={handleSaveAccount} className="space-y-4 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">O'qituvchi Ism-Familiyasi</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   placeholder="Masalan: Murodov Azizbek"
                   value={formAcc.fullName}
@@ -278,7 +299,7 @@ export default function TeacherAuthManagement() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Lavozimi</label>
-                <select 
+                <select
                   value={formAcc.position}
                   onChange={(e) => setFormAcc({ ...formAcc, position: e.target.value })}
                   className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700"
@@ -295,8 +316,8 @@ export default function TeacherAuthManagement() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Tizim Logini</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="Masalan: murod_teacher"
                     value={formAcc.username}
@@ -307,8 +328,8 @@ export default function TeacherAuthManagement() {
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Parol</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="Masalan: pass12345"
                     value={formAcc.password}
@@ -318,23 +339,20 @@ export default function TeacherAuthManagement() {
                 </div>
               </div>
 
-              {/* YALGIShCHA BIRTA RUXSAT TOGGLE BLOKI */}
               <div className="pt-2 border-t border-slate-100">
-                <div 
+                <div
                   onClick={() => setFormAcc({ ...formAcc, canDownloadReport: !formAcc.canDownloadReport })}
-                  className={`p-3.5 rounded-2xl border cursor-pointer transition flex items-center justify-between ${
-                    formAcc.canDownloadReport 
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold' 
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition flex items-center justify-between ${formAcc.canDownloadReport
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
                       : 'bg-slate-50 border-slate-200 text-slate-500 font-medium hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center space-x-2">
                     <FileSpreadsheet className={`w-4 h-4 ${formAcc.canDownloadReport ? 'text-emerald-600' : 'text-slate-400'}`} />
                     <span className="text-xs">{PERMISSION_DOWNLOAD_REPORT.label}</span>
                   </div>
-                  <div className={`w-5 h-5 rounded-lg flex items-center justify-center border transition ${
-                    formAcc.canDownloadReport ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
-                  }`}>
+                  <div className={`w-5 h-5 rounded-lg flex items-center justify-center border transition ${formAcc.canDownloadReport ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
+                    }`}>
                     {formAcc.canDownloadReport && <Check className="w-3.5 h-3.5" />}
                   </div>
                 </div>

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  UserPlus, 
-  Phone, 
-  X, 
-  CheckCircle2, 
+import {
+  UserPlus,
+  Phone,
+  X,
+  CheckCircle2,
   AlertTriangle,
   Trash2
 } from 'lucide-react';
@@ -35,9 +35,13 @@ export default function Teachers() {
     return saved ? JSON.parse(saved) : defaultTeachers;
   });
 
-  const [classesList] = useState(() => {
+  const [classesList, setClassesList] = useState(() => {
     const saved = localStorage.getItem('edupulse_classes');
     return saved ? JSON.parse(saved) : [];
+  });
+
+  const [accountsList, setAccountsList] = useState(() => {
+    return JSON.parse(localStorage.getItem('edupulse_teacher_accounts') || '[]');
   });
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -52,11 +56,26 @@ export default function Teachers() {
     subject: ''
   });
 
+  // Tizimdagi o'zgarishlarni tekshirish va yangilab turish
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedAccounts = JSON.parse(localStorage.getItem('edupulse_teacher_accounts') || '[]');
+      setAccountsList(savedAccounts);
+
+      const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
+      setClassesList(savedClasses);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    handleStorageChange();
+
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('edupulse_teachers', JSON.stringify(teachersList));
   }, [teachersList]);
 
-  // Faqat Admin ekanligini tekshirish
   const isAdmin = user?.role === 'administrator';
 
   const showToast = (msg) => {
@@ -64,10 +83,32 @@ export default function Teachers() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
+  // Faqat akkaunti bor va hali "O'qituvchilar" bo'limiga qo'shilmagan ustozlar ro'yxati
+  const availableAccounts = accountsList.filter(acc =>
+    !teachersList.some(t => t.fullName.trim().toLowerCase() === acc.fullName.trim().toLowerCase())
+  );
+
   const handleAddTeacher = (e) => {
     e.preventDefault();
     if (!isAdmin) return;
     setClassError('');
+
+    const inputNameClean = newTeacher.fullName.trim().toLowerCase();
+
+    // 1. Akkauntlar orasida bor-yo'qligini tekshirish
+    const hasAccount = accountsList.some(acc => acc.fullName && acc.fullName.trim().toLowerCase() === inputNameClean);
+
+    if (!hasAccount) {
+      setClassError("Ushbu ustoz tizimda mavjud emas! Iltimos, avval 'O'qituvchilar Akkauntlari' bo'limida ushbu ustoz uchun login va parol yarating.");
+      return;
+    }
+
+    // 2. Ustoz allaqachon qo'shilganmi tekshirish
+    const isAlreadyAdded = teachersList.some(t => t.fullName && t.fullName.trim().toLowerCase() === inputNameClean);
+    if (isAlreadyAdded) {
+      setClassError("Ushbu ustoz allaqachon o'qituvchilar ro'yxatiga qo'shilgan!");
+      return;
+    }
 
     const needsClass = newTeacher.teacherType === 'class_head' || newTeacher.teacherType === 'both';
     const needsSubject = newTeacher.teacherType === 'subject_teacher' || newTeacher.teacherType === 'both';
@@ -103,8 +144,8 @@ export default function Teachers() {
 
     if (needsClass) {
       const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
-      const updatedClasses = savedClasses.map(c => 
-        c.id === newTeacher.assignedClass 
+      const updatedClasses = savedClasses.map(c =>
+        c.id === newTeacher.assignedClass
           ? { ...c, teacher: newTeacher.fullName, teacherPhone: newTeacher.phone }
           : c
       );
@@ -118,8 +159,29 @@ export default function Teachers() {
 
   const handleDeleteTeacher = (id) => {
     if (!isAdmin) return;
+
+    const teacherToDelete = teachersList.find(t => t.id === id);
+    if (!teacherToDelete) return;
+
     setTeachersList(prev => prev.filter(t => t.id !== id));
-    showToast("O'qituvchi ro'yxatdan o'chirildi!");
+
+    const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
+    const updatedClasses = savedClasses.map(c => {
+      if (
+        c.teacher === teacherToDelete.fullName ||
+        c.assignedClass === teacherToDelete.assignedClass
+      ) {
+        return {
+          ...c,
+          teacher: 'Tayinlanmagan',
+          teacherPhone: 'Kiritilmagan'
+        };
+      }
+      return c;
+    });
+    localStorage.setItem('edupulse_classes', JSON.stringify(updatedClasses));
+
+    showToast("O'qituvchi o'chirildi va sinf 'Tayinlanmagan' holatiga o'tkazildi!");
   };
 
   return (
@@ -141,7 +203,6 @@ export default function Teachers() {
           </p>
         </div>
 
-        {/* FAQAT ADMIN UCHUN "O'QITUVCHI QO'SHISH" TUGMASI */}
         {isAdmin && (
           <button
             onClick={() => { setIsAddOpen(true); setClassError(''); }}
@@ -153,7 +214,6 @@ export default function Teachers() {
         )}
       </div>
 
-      {/* O'qituvchilar Ro'yxati (Barchada ko'rinadi) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {teachersList.map((tch) => (
           <div key={tch.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
@@ -169,7 +229,6 @@ export default function Teachers() {
               </div>
             </div>
 
-            {/* FAQAT ADMIN UCHUN "O'CHIRISH" TUGMASI */}
             {isAdmin && (
               <button
                 onClick={() => handleDeleteTeacher(tch.id)}
@@ -203,7 +262,6 @@ export default function Teachers() {
         ))}
       </div>
 
-      {/* FAQAT ADMIN UCHUN QO'SHISH MODALI */}
       {isAdmin && isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
@@ -213,8 +271,8 @@ export default function Teachers() {
             <h3 className="text-lg font-black text-slate-900">Yangi O'qituvchi Qo'shish</h3>
 
             {classError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center space-x-2 font-semibold">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-start space-x-2.5 font-semibold">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <span>{classError}</span>
               </div>
             )}
@@ -222,20 +280,35 @@ export default function Teachers() {
             <form onSubmit={handleAddTeacher} className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Ismi va Familiyasi</label>
-                <input 
-                  type="text" 
+                {/* Datalist bilan avtomatik to'ldirish menyusi */}
+                <input
+                  type="text"
                   required
-                  placeholder="Masalan: Karimova Zilola"
+                  list="teacher-accounts-list"
+                  placeholder="Bitta harf kiriting (masalan: K)"
                   value={newTeacher.fullName}
-                  onChange={(e) => setNewTeacher({ ...newTeacher, fullName: e.target.value })}
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                  onChange={(e) => {
+                    setNewTeacher({ ...newTeacher, fullName: e.target.value });
+                    setClassError('');
+                  }}
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
                 />
+
+                <datalist id="teacher-accounts-list">
+                  {availableAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.fullName} />
+                  ))}
+                </datalist>
+
+                <p className="text-[10px] text-slate-400 mt-1">
+                  * Faqat tizimda ro'yxatdan o'tgan ustozlar ko'rinadi.
+                </p>
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Telefon Raqami</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newTeacher.phone}
                   onChange={(e) => setNewTeacher({ ...newTeacher, phone: formatPhoneNumber(e.target.value) })}
                   className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
@@ -244,13 +317,13 @@ export default function Teachers() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">O'qituvchi Maqomi</label>
-                <select 
+                <select
                   value={newTeacher.teacherType}
                   onChange={(e) => {
                     setNewTeacher({ ...newTeacher, teacherType: e.target.value });
                     setClassError('');
                   }}
-                  className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700"
+                  className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
                 >
                   <option value="class_head">Sinf rahbari</option>
                   <option value="subject_teacher">Fan o'qituvchisi</option>
@@ -261,13 +334,13 @@ export default function Teachers() {
               {(newTeacher.teacherType === 'class_head' || newTeacher.teacherType === 'both') && (
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Biriktiriladigan Sinf</label>
-                  <select 
+                  <select
                     value={newTeacher.assignedClass}
                     onChange={(e) => {
                       setNewTeacher({ ...newTeacher, assignedClass: e.target.value });
                       setClassError('');
                     }}
-                    className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700"
+                    className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
                   >
                     <option value="">Sinfni tanlang...</option>
                     {classesList.map(c => {
@@ -285,8 +358,8 @@ export default function Teachers() {
               {(newTeacher.teacherType === 'subject_teacher' || newTeacher.teacherType === 'both') && (
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Dars Beradigan Fani</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     placeholder="Masalan: Matematika, Fizika"
                     value={newTeacher.subject}
                     onChange={(e) => setNewTeacher({ ...newTeacher, subject: e.target.value })}
