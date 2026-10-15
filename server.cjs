@@ -214,23 +214,14 @@ app.post('/api/book-records', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- 7. FRONTEND (REACT) FAYLLARINI ULASH (Cannot GET / xatoligini oldini olish uchun) ---
-app.use(express.static(path.join(__dirname, 'dist')));
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server ${PORT}-portda ishlamoqda!`));
-
 // --- 7. FRONTEND (REACT) FAYLLARINI XAVFSIZ ULASH ---
 const distPath = path.join(__dirname, 'dist');
 const fs = require('fs');
 
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  app.get('*', (req, res) => {
+  // Yangi Express talabiga ko'ra catch-all route (.*) ko'rinishida yoziladi
+  app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
