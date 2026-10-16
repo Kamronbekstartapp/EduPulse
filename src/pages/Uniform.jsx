@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Shirt, BookOpen, CheckCircle2, AlertTriangle, Sparkles, GraduationCap, ChevronRight, Lock, Save } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 
 export default function Uniform() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-  const [classesList] = useState(() => JSON.parse(localStorage.getItem('edupulse_classes') || '[]'));
-  const [studentsList, setStudentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
+  const [classesList, setClassesList] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
+  const [records, setRecords] = useState({});
 
   const [selectedClass, setSelectedClass] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
@@ -13,21 +16,49 @@ export default function Uniform() {
   // Bugungi sana (YYYY-MM-DD formatida)
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // Firestore'dan ma'lumotlarni yuklab olish
+  useEffect(() => {
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+
+      // 2. O'quvchilarni yuklash
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+
+      // 3. Forma va kitob yozuvlarini yuklash
+      const recordsSnap = await getDocs(collection(db, 'uniform_records'));
+      const recObj = {};
+      recordsSnap.docs.forEach(docSnap => {
+        recObj[docSnap.id] = docSnap.data();
+      });
+      setRecords(recObj);
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
+
   const isAdmin = user?.role === 'administrator';
-  const isAssignedTeacher = !isAdmin && classesList.some(c => c.id === selectedClass?.id && c.teacher?.toLowerCase().includes(user?.fullName?.toLowerCase() || ''));
+  const cTeacher = selectedClass ? (selectedClass.teacher || selectedClass.teacher_name || '') : '';
+  const isAssignedTeacher = !isAdmin && classesList.some(c => {
+    const cId = c.id || c.class_id;
+    const selId = selectedClass ? (selectedClass.id || selectedClass.class_id) : '';
+    const tName = c.teacher || c.teacher_name || '';
+    return cId === selId && tName.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
+  });
   
   const canEdit = isAdmin || isAssignedTeacher;
   const isLockedForUser = !isAdmin && isSavedToday;
 
-  // Har bir sinf va kun uchun saqlangan holatni yuklash
-  const [records, setRecords] = useState(() => {
-    const saved = localStorage.getItem('edupulse_uniform_records');
-    return saved ? JSON.parse(saved) : {};
-  });
-
   useEffect(() => {
     if (selectedClass) {
-      const recordKey = `${selectedClass.id}_${todayStr}`;
+      const clsId = selectedClass.id || selectedClass.class_id;
+      const recordKey = `${clsId}_${todayStr}`;
       setIsSavedToday(!!records[recordKey]?.locked);
     }
   }, [selectedClass, todayStr, records]);
@@ -37,11 +68,13 @@ export default function Uniform() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const handleToggle = (studentId, field) => {
+  const handleToggle = async (studentId, field) => {
     if (!canEdit || isLockedForUser) return;
 
-    const recordKey = `${selectedClass.id}_${todayStr}`;
-    const currentClassStudents = records[recordKey]?.students || studentsList.filter(s => s.grade === selectedClass.id).map(s => ({
+    const clsId = selectedClass.id || selectedClass.class_id;
+    const recordKey = `${clsId}_${todayStr}`;
+    
+    const currentClassStudents = records[recordKey]?.students || studentsList.filter(s => s.grade === clsId || s.grade === selectedClass.name).map(s => ({
       ...s,
       uniformReady: true,
       booksReady: true,
@@ -49,44 +82,55 @@ export default function Uniform() {
     }));
 
     const updatedStudents = currentClassStudents.map(s => 
-      s.id === studentId ? { ...s, [field]: !s[field] } : s
+      (s.id === studentId || s.student_id === studentId) ? { ...s, [field]: !s[field] } : s
     );
 
-    const newRecords = {
-      ...records,
-      [recordKey]: {
-        locked: isSavedToday,
-        students: updatedStudents
-      }
+    const recordPayload = {
+      locked: isSavedToday,
+      students: updatedStudents
     };
 
-    setRecords(newRecords);
-    localStorage.setItem('edupulse_uniform_records', JSON.stringify(newRecords));
+    try {
+      await setDoc(doc(db, 'uniform_records', recordKey), recordPayload);
+      setRecords(prev => ({
+        ...prev,
+        [recordKey]: recordPayload
+      }));
+    } catch (err) {
+      console.error("Holatni yangilashda xatolik:", err);
+    }
   };
 
-  const handleSaveDay = () => {
+  const handleSaveDay = async () => {
     if (!canEdit) return;
 
-    const recordKey = `${selectedClass.id}_${todayStr}`;
-    const currentClassStudents = records[recordKey]?.students || studentsList.filter(s => s.grade === selectedClass.id).map(s => ({
+    const clsId = selectedClass.id || selectedClass.class_id;
+    const recordKey = `${clsId}_${todayStr}`;
+    
+    const currentClassStudents = records[recordKey]?.students || studentsList.filter(s => s.grade === clsId || s.grade === selectedClass.name).map(s => ({
       ...s,
       uniformReady: true,
       booksReady: true,
       notebooksReady: true
     }));
 
-    const newRecords = {
-      ...records,
-      [recordKey]: {
-        locked: true,
-        students: currentClassStudents
-      }
+    const recordPayload = {
+      locked: true,
+      students: currentClassStudents
     };
 
-    setRecords(newRecords);
-    localStorage.setItem('edupulse_uniform_records', JSON.stringify(newRecords));
-    setIsSavedToday(true);
-    showToast(isAdmin ? "Admin tomonidan ma'lumotlar saqlandi!" : "Bugungi ma'lumotlar muvaffaqiyatli saqlandi va qulflandi!");
+    try {
+      await setDoc(doc(db, 'uniform_records', recordKey), recordPayload);
+      setRecords(prev => ({
+        ...prev,
+        [recordKey]: recordPayload
+      }));
+      setIsSavedToday(true);
+      showToast(isAdmin ? "Admin tomonidan ma'lumotlar saqlandi!" : "Bugungi ma'lumotlar muvaffaqiyatli saqlandi va qulflandi!");
+    } catch (err) {
+      console.error("Saqlashda xatolik:", err);
+      showToast("Saqlashda xatolik yuz berdi!");
+    }
   };
 
   // Agar sinf tanlanmagan bo'lsa - Sinflar ro'yxatini ko'rsatish
@@ -103,22 +147,24 @@ export default function Uniform() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {classesList.map((cls) => {
-            const count = studentsList.filter(s => s.grade === cls.id).length;
+            const clsId = cls.id || cls.class_id;
+            const count = studentsList.filter(s => s.grade === clsId || s.grade === cls.name).length;
+            const tName = cls.teacher || cls.teacher_name || 'Tayinlanmagan';
             return (
               <div
-                key={cls.id}
+                key={clsId}
                 onClick={() => setSelectedClass(cls)}
                 className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 cursor-pointer group hover:border-blue-300"
               >
                 <div className="flex justify-between items-center">
                   <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
-                    {cls.name}
+                    {cls.name || clsId}
                   </span>
                   <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition" />
                 </div>
                 <div className="text-xs text-slate-600 space-y-1">
                   <p>O'quvchilar: <strong className="text-slate-900">{count} nafar</strong></p>
-                  <p>Sinf rahbari: <strong className="text-slate-900">{cls.teacher || 'Tayinlanmagan'}</strong></p>
+                  <p>Sinf rahbari: <strong className="text-slate-900">{tName}</strong></p>
                 </div>
               </div>
             );
@@ -129,8 +175,9 @@ export default function Uniform() {
   }
 
   // Tanlangan sinf o'quvchilari
-  const recordKey = `${selectedClass.id}_${todayStr}`;
-  const activeStudents = records[recordKey]?.students || studentsList.filter(s => s.grade === selectedClass.id).map(s => ({
+  const clsId = selectedClass.id || selectedClass.class_id;
+  const recordKey = `${clsId}_${todayStr}`;
+  const activeStudents = records[recordKey]?.students || studentsList.filter(s => s.grade === clsId || s.grade === selectedClass.name).map(s => ({
     ...s,
     uniformReady: true,
     booksReady: true,
@@ -155,7 +202,7 @@ export default function Uniform() {
             ← Barcha sinflarga qaytish
           </button>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            {selectedClass.name} — Forma & Kitob Nazorati
+            {selectedClass.name || clsId} — Forma & Kitob Nazorati
           </h2>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">Sana: {todayStr} {isAdmin && <span className="text-blue-600 font-bold">(Admin rejimi)</span>}</p>
         </div>
@@ -193,52 +240,56 @@ export default function Uniform() {
 
         <div className="divide-y divide-slate-100">
           {activeStudents.length > 0 ? (
-            activeStudents.map((student) => (
-              <div key={student.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
-                    {student.fullName.slice(0, 2).toUpperCase()}
+            activeStudents.map((student) => {
+              const stId = student.id || student.student_id;
+              const stName = student.fullName || student.full_name || student.name || '';
+              return (
+                <div key={stId} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
+                      {stName ? stName.slice(0, 2).toUpperCase() : 'ST'}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{stName}</h4>
+                      <p className="text-[10px] text-slate-400">ID: {stId}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{student.fullName}</h4>
-                    <p className="text-[10px] text-slate-400">ID: {student.id}</p>
+
+                  {/* Status tugmalari (Forma, Kitob, Daftar) */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      disabled={!canEdit || isLockedForUser}
+                      onClick={() => handleToggle(stId, 'uniformReady')}
+                      className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
+                        student.uniformReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      } ${(!canEdit || isLockedForUser) ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      Forma: {student.uniformReady ? 'Bor' : 'Yo\'q'}
+                    </button>
+
+                    <button
+                      disabled={!canEdit || isLockedForUser}
+                      onClick={() => handleToggle(stId, 'booksReady')}
+                      className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
+                        student.booksReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      } ${(!canEdit || isLockedForUser) ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      Kitob: {student.booksReady ? 'Bor' : 'Yo\'q'}
+                    </button>
+
+                    <button
+                      disabled={!canEdit || isLockedForUser}
+                      onClick={() => handleToggle(stId, 'notebooksReady')}
+                      className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
+                        student.notebooksReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      } ${(!canEdit || isLockedForUser) ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      Daftar: {student.notebooksReady ? 'Bor' : 'Yo\'q'}
+                    </button>
                   </div>
                 </div>
-
-                {/* Status tugmalari (Forma, Kitob, Daftar) */}
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <button
-                    disabled={!canEdit || isLockedForUser}
-                    onClick={() => handleToggle(student.id, 'uniformReady')}
-                    className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                      student.uniformReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                    } ${(!canEdit || isLockedForUser) ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
-                  >
-                    Forma: {student.uniformReady ? 'Bor' : 'Yo\'q'}
-                  </button>
-
-                  <button
-                    disabled={!canEdit || isLockedForUser}
-                    onClick={() => handleToggle(student.id, 'booksReady')}
-                    className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                      student.booksReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                    } ${(!canEdit || isLockedForUser) ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
-                  >
-                    Kitob: {student.booksReady ? 'Bor' : 'Yo\'q'}
-                  </button>
-
-                  <button
-                    disabled={!canEdit || isLockedForUser}
-                    onClick={() => handleToggle(student.id, 'notebooksReady')}
-                    className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                      student.notebooksReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                    } ${(!canEdit || isLockedForUser) ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
-                  >
-                    Daftar: {student.notebooksReady ? 'Bor' : 'Yo\'q'}
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-center py-12">
               <p className="text-xs text-slate-400 font-bold">Bu sinfda hali o'quvchilar mavjud emas.</p>

@@ -10,31 +10,57 @@ import {
   ShieldAlert,
   Unlock
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function Attendance() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-  const [classesList] = useState(() => JSON.parse(localStorage.getItem('edupulse_classes') || '[]'));
-  const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
-  const [teachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
+  
+  const [classesList, setClassesList] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
+  const [teachersList, setTeachersList] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState({});
 
   const [selectedClassId, setSelectedClassId] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  const [attendanceRecords, setAttendanceRecords] = useState(() => {
-    const saved = localStorage.getItem('edupulse_attendance');
-    return saved ? JSON.parse(saved) : {};
-  });
-
   const [toastMsg, setToastMsg] = useState(null);
+
+  // Firestore'dan barcha ma'lumotlarni yuklash
+  useEffect(() => {
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 2. O'quvchilarni yuklash
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 3. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 4. Bugungi davomat yozuvlarini yuklash
+      const todayStr = new Date().toISOString().split('T')[0];
+      const attendanceSnap = await getDocs(collection(db, 'attendance'));
+      const attObj = {};
+      attendanceSnap.docs.forEach(docSnap => {
+        attObj[docSnap.id] = docSnap.data().data || {};
+      });
+      setAttendanceRecords(attObj);
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem('edupulse_attendance', JSON.stringify(attendanceRecords));
-  }, [attendanceRecords]);
 
   const todayStr = new Date().toISOString().split('T')[0];
   
@@ -51,15 +77,13 @@ export default function Attendance() {
 
   // Tahrirlash huquqini tekshirish
   const checkCanEdit = (classId) => {
-    // Admin har qanday holatda va har qanday sinfni o'zgartira oladi!
     if (isAdmin) return true; 
 
-    // O'qituvchi bo'lsa: faqat o'z sinfini va 08:15 gacha tahrirlay oladi
-    const myTeacherInfo = teachersList.find(t => t.fullName.toLowerCase() === user.username?.toLowerCase());
-    return myTeacherInfo && myTeacherInfo.assignedClass === classId && !isTimeLocked;
+    const myTeacherInfo = teachersList.find(t => t.full_name?.toLowerCase() === user.username?.toLowerCase() || t.phone === user.username);
+    return myTeacherInfo && (myTeacherInfo.assigned_class === classId || myTeacherInfo.assignedClass === classId) && !isTimeLocked;
   };
 
-  const handleStatusChange = (studentId, status) => {
+  const handleStatusChange = async (studentId, status) => {
     if (!isAdmin && isTimeLocked) {
       showToast("Soat 08:15 dan o'tdi! Oddiy o'qituvchilar uchun davomat bloki yopilgan.");
       return;
@@ -71,16 +95,31 @@ export default function Attendance() {
     }
 
     const recordKey = `${todayStr}_${selectedClassId}`;
-    setAttendanceRecords(prev => ({
-      ...prev,
-      [recordKey]: {
-        ...(prev[recordKey] || {}),
-        [studentId]: status
-      }
-    }));
+    const updatedClassAttendance = {
+      ...(attendanceRecords[recordKey] || {}),
+      [studentId]: status
+    };
+
+    const newRecords = {
+      ...attendanceRecords,
+      [recordKey]: updatedClassAttendance
+    };
+
+    setAttendanceRecords(newRecords);
+
+    // Firestore'ga saqlash
+    try {
+      await setDoc(doc(db, 'attendance', recordKey), {
+        record_key: recordKey,
+        data: updatedClassAttendance
+      });
+    } catch (err) {
+      console.error("Davomatni saqlashda xatolik:", err);
+      showToast("Davomatni saqlashda xatolik yuz berdi!");
+    }
   };
 
-  const selectedClassStudents = studentsList.filter(s => s.grade === selectedClassId);
+  const selectedClassStudents = studentsList.filter(s => s.grade === selectedClassId || s.class_id === selectedClassId);
   const currentKey = `${todayStr}_${selectedClassId}`;
   const currentClassAttendance = attendanceRecords[currentKey] || {};
 
@@ -155,20 +194,20 @@ export default function Attendance() {
             {selectedClassStudents.length > 0 ? (
               <div className="space-y-2">
                 {selectedClassStudents.map((student) => {
-                  const status = currentClassAttendance[student.id] || 'present';
+                  const status = currentClassAttendance[student.id || student.student_id] || 'present';
                   const canEdit = checkCanEdit(selectedClassId);
 
                   return (
-                    <div key={student.id} className="p-3 bg-slate-50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border border-slate-100">
+                    <div key={student.id || student.student_id} className="p-3 bg-slate-50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border border-slate-100">
                       <div>
-                        <p className="font-extrabold text-xs text-slate-900">{student.fullName}</p>
-                        <p className="text-[10px] text-slate-400">{student.id}</p>
+                        <p className="font-extrabold text-xs text-slate-900">{student.full_name || student.fullName}</p>
+                        <p className="text-[10px] text-slate-400">{student.student_id || student.id}</p>
                       </div>
 
                       <div className="flex items-center space-x-1.5 self-end sm:self-auto">
                         <button
                           disabled={!canEdit}
-                          onClick={() => handleStatusChange(student.id, 'present')}
+                          onClick={() => handleStatusChange(student.id || student.student_id, 'present')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1 ${
                             status === 'present'
                               ? 'bg-emerald-600 text-white shadow-md'
@@ -181,7 +220,7 @@ export default function Attendance() {
 
                         <button
                           disabled={!canEdit}
-                          onClick={() => handleStatusChange(student.id, 'absent')}
+                          onClick={() => handleStatusChange(student.id || student.student_id, 'absent')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1 ${
                             status === 'absent'
                               ? 'bg-rose-600 text-white shadow-md'
@@ -194,7 +233,7 @@ export default function Attendance() {
 
                         <button
                           disabled={!canEdit}
-                          onClick={() => handleStatusChange(student.id, 'excused')}
+                          onClick={() => handleStatusChange(student.id || student.student_id, 'excused')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1 ${
                             status === 'excused'
                               ? 'bg-amber-500 text-white shadow-md'
@@ -218,8 +257,9 @@ export default function Attendance() {
         /* SINFLAR RO'YXATI */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {classesList.map((cls) => {
-            const classStudents = studentsList.filter(s => s.grade === cls.id);
-            const classKey = `${todayStr}_${cls.id}`;
+            const classIdVal = cls.class_id || cls.id;
+            const classStudents = studentsList.filter(s => s.grade === classIdVal || s.class_id === classIdVal || s.grade === cls.name);
+            const classKey = `${todayStr}_${classIdVal}`;
             const att = attendanceRecords[classKey] || {};
 
             let presentCount = 0;
@@ -227,25 +267,26 @@ export default function Attendance() {
             let excusedCount = 0;
 
             classStudents.forEach(st => {
-              const stStatus = att[st.id] || 'present';
+              const stId = st.id || st.student_id;
+              const stStatus = att[stId] || 'present';
               if (stStatus === 'present') presentCount++;
               if (stStatus === 'absent') absentCount++;
               if (stStatus === 'excused') excusedCount++;
             });
 
-            const canEditThis = checkCanEdit(cls.id);
+            const canEditThis = checkCanEdit(classIdVal);
 
             return (
               <div 
-                key={cls.id}
-                onClick={() => setSelectedClassId(cls.id)}
+                key={classIdVal}
+                onClick={() => setSelectedClassId(classIdVal)}
                 className={`bg-white border p-5 rounded-3xl shadow-sm hover:shadow-md transition cursor-pointer space-y-3 relative ${
                   canEditThis ? 'border-blue-300 ring-2 ring-blue-500/10' : 'border-slate-200/80'
                 }`}
               >
                 <div className="flex justify-between items-center">
                   <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl">
-                    {cls.name}
+                    {cls.name || classIdVal}
                   </span>
                   {isAdmin ? (
                     <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md">
@@ -259,7 +300,7 @@ export default function Attendance() {
                 </div>
 
                 <div className="text-xs text-slate-600 space-y-1">
-                  <p>Sinf rahbari: <strong className="text-slate-900">{cls.teacher}</strong></p>
+                  <p>Sinf rahbari: <strong className="text-slate-900">{cls.teacher || cls.teacher_name || 'Tayinlanmagan'}</strong></p>
                   <p>Jami o'quvchi: <strong className="text-slate-900">{classStudents.length} ta</strong></p>
                 </div>
 

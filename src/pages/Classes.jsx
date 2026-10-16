@@ -11,6 +11,8 @@ import {
   UserCheck,
   Clock
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
 const formatPhoneNumber = (value) => {
   if (!value) return '+998 ';
@@ -25,35 +27,39 @@ const formatPhoneNumber = (value) => {
   return result;
 };
 
-const defaultClasses = [
-  { id: '9-A', name: '9-A sinf', teacher: 'Usmonova Kamola', shift: '1-smena' },
-  { id: '11-A', name: '11-A sinf', teacher: 'Tayinlanmagan', shift: '2-smena' },
-];
-
 export default function Classes() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-  const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
+  
+  const [studentsList, setStudentsList] = useState([]);
+  const [teachersList, setTeachersList] = useState([]);
+  const [classesList, setClassesList] = useState([]);
 
-  const [teachersList, setTeachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
-  const [classesList, setClassesList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_classes');
-    return saved ? JSON.parse(saved) : defaultClasses;
-  });
-
+  // Firestore'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    const handleStorageChange = () => {
-      const savedClasses = localStorage.getItem('edupulse_classes');
-      if (savedClasses) setClassesList(JSON.parse(savedClasses));
-
-      const savedTeachers = localStorage.getItem('edupulse_teachers');
-      if (savedTeachers) setTeachersList(JSON.parse(savedTeachers));
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    handleStorageChange();
-
-    return () => window.removeEventListener('storage', handleStorageChange);
+    loadDataFromFirebase();
   }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      const classesData = classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setClassesList(classesData.length > 0 ? classesData : [
+        { id: '9-A', name: '9-A sinf', teacher: 'Usmonova Kamola', shift: '1-smena' },
+        { id: '11-A', name: '11-A sinf', teacher: 'Tayinlanmagan', shift: '2-smena' },
+      ]);
+
+      // 2. O'quvchilarni yuklash
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 3. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
 
   const [activeShiftFilter, setActiveShiftFilter] = useState('all');
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
@@ -68,10 +74,6 @@ export default function Classes() {
     shift: '1-smena'
   });
 
-  useEffect(() => {
-    localStorage.setItem('edupulse_classes', JSON.stringify(classesList));
-  }, [classesList]);
-
   const isAdmin = user?.role === 'administrator';
 
   const showToast = (msg) => {
@@ -80,31 +82,39 @@ export default function Classes() {
   };
 
   const handleTeacherSelect = (teacherFullName) => {
-    const selectedTeacher = teachersList.find(t => t.fullName === teacherFullName);
+    const selectedTeacher = teachersList.find(t => (t.full_name || t.fullName) === teacherFullName);
     setNewClass(prev => ({
       ...prev,
       teacherName: teacherFullName || 'Tayinlanmagan',
-      teacherPhone: selectedTeacher && selectedTeacher.phone ? selectedTeacher.phone : '+998 '
+      teacherPhone: selectedTeacher && (selectedTeacher.phone || selectedTeacher.teacher_phone) ? (selectedTeacher.phone || selectedTeacher.teacher_phone) : '+998 '
     }));
   };
 
-  const handleAddClass = (e) => {
+  const handleAddClass = async (e) => {
     e.preventDefault();
     if (!newClass.gradeNumber || !newClass.gradeLetter) return;
 
     const classId = `${newClass.gradeNumber}-${newClass.gradeLetter.toUpperCase()}`;
     const classObj = {
-      id: classId,
+      class_id: classId,
       name: `${classId} sinf`,
       teacher: newClass.teacherName || 'Tayinlanmagan',
       teacherPhone: newClass.teacherPhone.length > 5 ? newClass.teacherPhone : 'Kiritilmagan',
       shift: newClass.shift || '1-smena'
     };
 
-    setClassesList(prev => [...prev, classObj]);
-    setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ', shift: '1-smena' });
-    setIsAddClassOpen(false);
-    showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
+    try {
+      // Firestore'ga saqlash
+      await setDoc(doc(db, 'classes', classId), classObj);
+
+      setClassesList(prev => [...prev.filter(c => c.id !== classId && c.class_id !== classId), { id: classId, ...classObj }]);
+      setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ', shift: '1-smena' });
+      setIsAddClassOpen(false);
+      showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
+    } catch (err) {
+      console.error("Sinfni qo'shishda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
   const filteredClasses = classesList.filter(cls => {
@@ -113,7 +123,7 @@ export default function Classes() {
   });
 
   const viewStudents = selectedClassForView
-    ? studentsList.filter(s => s.grade === selectedClassForView.id)
+    ? studentsList.filter(s => s.grade === selectedClassForView.id || s.grade === selectedClassForView.class_id || s.grade === selectedClassForView.name)
     : [];
 
   return (
@@ -181,23 +191,24 @@ export default function Classes() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredClasses.length > 0 ? (
           filteredClasses.map((cls) => {
-            const studentCount = studentsList.filter(s => s.grade === cls.id).length;
+            const classIdVal = cls.id || cls.class_id;
+            const studentCount = studentsList.filter(s => s.grade === classIdVal || s.grade === cls.name).length;
 
-            // Ustoz bazada haqiqatdan ham bormi yoki o'chib ketganmi tekshiramiz
+            const clsTeacher = cls.teacher || cls.teacher_name;
             const isTeacherExists = teachersList.some(
-              t => t.fullName && cls.teacher && t.fullName.trim().toLowerCase() === cls.teacher.trim().toLowerCase()
+              t => (t.full_name || t.fullName) && clsTeacher && (t.full_name || t.fullName).trim().toLowerCase() === clsTeacher.trim().toLowerCase()
             );
-            const displayTeacher = (isTeacherExists && cls.teacher && cls.teacher !== 'Tayinlanmagan') ? cls.teacher : 'Tayinlanmagan';
+            const displayTeacher = (isTeacherExists && clsTeacher && clsTeacher !== 'Tayinlanmagan') ? clsTeacher : 'Tayinlanmagan';
 
             return (
               <div
-                key={cls.id}
+                key={classIdVal}
                 onClick={() => setSelectedClassForView(cls)}
                 className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 cursor-pointer group hover:border-blue-300"
               >
                 <div className="flex justify-between items-center">
                   <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
-                    {cls.name}
+                    {cls.name || classIdVal}
                   </span>
                   <div className="flex items-center space-x-1.5 bg-slate-100 text-slate-700 px-2.5 py-1 rounded-xl group-hover:bg-blue-50 group-hover:text-blue-600 transition">
                     <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500" />
@@ -247,36 +258,40 @@ export default function Classes() {
                 <GraduationCap className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-slate-900">{selectedClassForView.name} O'quvchilari</h3>
+                <h3 className="text-lg font-black text-slate-900">{selectedClassForView.name || selectedClassForView.id} O'quvchilari</h3>
                 <p className="text-xs text-slate-500">
-                  Rahbar: <strong className="text-slate-800">{selectedClassForView.teacher || 'Tayinlanmagan'}</strong> | Smena: <strong className="text-blue-600">{selectedClassForView.shift || '1-smena'}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
+                  Rahbar: <strong className="text-slate-800">{selectedClassForView.teacher || selectedClassForView.teacher_name || 'Tayinlanmagan'}</strong> | Smena: <strong className="text-blue-600">{selectedClassForView.shift || '1-smena'}</strong> | Jami: <strong className="text-blue-600">{viewStudents.length} nafar</strong>
                 </p>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 custom-scrollbar">
               {viewStudents.length > 0 ? (
-                viewStudents.map((stu, idx) => (
-                  <div key={stu.id || idx} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-2">
-                    <div className="flex items-center space-x-3">
-                      <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                        {idx + 1}
-                      </span>
-                      <div>
-                        <p className="font-extrabold text-xs text-slate-900">{stu.fullName}</p>
-                        <p className="text-[10px] text-slate-400">ID: {stu.id}</p>
+                viewStudents.map((stu, idx) => {
+                  const stName = stu.fullName || stu.full_name;
+                  const stParent = stu.parentName || stu.parent_name;
+                  return (
+                    <div key={stu.id || stu.student_id || idx} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-2">
+                      <div className="flex items-center space-x-3">
+                        <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <p className="font-extrabold text-xs text-slate-900">{stName}</p>
+                          <p className="text-[10px] text-slate-400">ID: {stu.id || stu.student_id}</p>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-600 text-right">
+                        {stParent && (
+                          <p className="text-slate-500 text-[11px]">
+                            Ota-onasi: <strong className="text-slate-700">{stParent}</strong>
+                          </p>
+                        )}
                       </div>
                     </div>
-
-                    <div className="text-[11px] text-slate-600 text-right">
-                      {stu.parentName && (
-                        <p className="text-slate-500 text-[11px]">
-                          Ota-onasi: <strong className="text-slate-700">{stu.parentName}</strong>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center py-10 space-y-2">
                   <UserCheck className="w-10 h-10 text-slate-300 mx-auto" />
@@ -352,11 +367,14 @@ export default function Classes() {
                   className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-bold bg-white text-slate-800"
                 >
                   <option value="">Tayinlanmagan</option>
-                  {teachersList.map((t) => (
-                    <option key={t.id || t.fullName} value={t.fullName}>
-                      {t.fullName} {t.subject ? `(${t.subject})` : ''}
-                    </option>
-                  ))}
+                  {teachersList.map((t) => {
+                    const tName = t.full_name || t.fullName;
+                    return (
+                      <option key={t.id || tName} value={tName}>
+                        {tName} {t.subject ? `(${t.subject})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

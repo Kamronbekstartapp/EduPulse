@@ -1,18 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, X, Sparkles, UserCheck, AlertTriangle } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function ClassSubjectStatus() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
-  const [bookRecords] = useState(() => {
-    const saved = localStorage.getItem('edupulse_book_notebook_records');
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [studentsList, setStudentsList] = useState([]);
+  const [bookRecords, setBookRecords] = useState({});
 
   const { classId, className, subject, teacherName, dateStr, dayName, formattedDate } = location.state || {};
+
+  // Firebase'dan ma'lumotlarni yuklab olish
+  useEffect(() => {
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. O'quvchilarni Firestore'dan olish
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 2. Kitob-daftar yozuvlarini Firestore'dan olish
+      const recordsSnap = await getDocs(collection(db, 'book_notebook_records'));
+      const recordsObj = {};
+      recordsSnap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        recordsObj[data.record_key || docSnap.id] = data.data || data;
+      });
+      setBookRecords(recordsObj);
+    } catch (err) {
+      console.error("Firebase'dan ma'lumotlarni olishda xatolik:", err);
+    }
+  };
 
   if (!classId && !className) {
     return (
@@ -34,10 +57,9 @@ export default function ClassSubjectStatus() {
     return (targetId && sGrade === targetId) || (targetName && sGrade === targetName);
   });
 
-  // 2. localStorage dagi barcha kalitlarni tekshirish (Variantlar)
+  // 2. Firestore dagi barcha kalitlarni tekshirish (Variantlar)
   const allSavedKeys = Object.keys(bookRecords);
   
-  // Masalan: "classId_subject_dateStr" yoki "className_subject_dateStr"
   const matchedKey = allSavedKeys.find(key => {
     const parts = key.split('_');
     if (parts.length < 3) return false;
@@ -103,26 +125,27 @@ export default function ClassSubjectStatus() {
         <div className="divide-y divide-slate-100">
           {classStudents.length > 0 ? (
             classStudents.map((student, idx) => {
-              // O'quvchi ma'lumotini topish
+              const stId = student.id || student.student_id;
+              const stName = student.fullName || student.full_name || student.name;
+
               const studentStatus = savedRecord?.students?.find(s => 
-                String(s.id) === String(student.id) || 
-                (s.fullName && student.fullName && s.fullName.toLowerCase().trim() === student.fullName.toLowerCase().trim()) ||
-                (s.name && student.fullName && s.name.toLowerCase().trim() === student.fullName.toLowerCase().trim())
+                String(s.id) === String(stId) || 
+                (s.fullName && stName && s.fullName.toLowerCase().trim() === stName.toLowerCase().trim()) ||
+                (s.name && stName && s.name.toLowerCase().trim() === stName.toLowerCase().trim())
               );
 
-              // Agar o'qituvchi belgilagan bo'lsa false/true, belgilamagan bo'lsa odatiy true
               const hasBook = studentStatus ? Boolean(studentStatus.booksReady) : true;
               const hasNotebook = studentStatus ? Boolean(studentStatus.notebooksReady) : true;
 
               return (
-                <div key={student.id || idx} className="p-4 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition">
+                <div key={stId || idx} className="p-4 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition">
                   <div className="w-1/2 sm:w-2/3 flex items-center space-x-3">
                     <span className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
                       {idx + 1}
                     </span>
                     <div>
-                      <p className="font-extrabold text-xs sm:text-sm text-slate-900">{student.fullName || student.name}</p>
-                      <p className="text-[10px] text-slate-400">ID: {student.id}</p>
+                      <p className="font-extrabold text-xs sm:text-sm text-slate-900">{stName}</p>
+                      <p className="text-[10px] text-slate-400">ID: {stId}</p>
                     </div>
                   </div>
 

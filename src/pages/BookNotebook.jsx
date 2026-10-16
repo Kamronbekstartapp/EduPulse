@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles, Users } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function BookNotebook() {
   const location = useLocation();
@@ -17,24 +19,33 @@ export default function BookNotebook() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  // Serverdan va localStorage'dan ma'lumotlarni yuklab olish
+  // Firebase'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    // 1. O'quvchilarni serverdan olish
-    fetch('http://localhost:5000/api/students')
-      .then(res => res.json())
-      .then(data => setStudentsList(data))
-      .catch(err => console.error("O'quvchilarni olishda xatolik:", err));
-
-    // 2. Kitob-daftar yozuvlarini serverdan olish
-    fetch('http://localhost:5000/api/book-records')
-      .then(res => res.json())
-      .then(data => setRecords(data))
-      .catch(err => console.error("Yozuvlarni olishda xatolik:", err));
-
-    // 3. Dars jadvalini localStorage'dan (yoki serverdan) olish
-    const savedTimetable = JSON.parse(localStorage.getItem('edupulse_timetable') || '[]');
-    setTimetable(savedTimetable);
+    loadDataFromFirebase();
   }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. O'quvchilarni Firestore'dan olish
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 2. Kitob-daftar yozuvlarini Firestore'dan olish
+      const recordsSnap = await getDocs(collection(db, 'book_notebook_records'));
+      const recordsObj = {};
+      recordsSnap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        recordsObj[data.record_key || docSnap.id] = data.data || data;
+      });
+      setRecords(recordsObj);
+
+      // 3. Dars jadvalini localStorage'dan (yoki Firestore'dan) olish
+      const savedTimetable = JSON.parse(localStorage.getItem('edupulse_timetable') || '[]');
+      setTimetable(savedTimetable);
+    } catch (err) {
+      console.error("Firebase'dan ma'lumotlarni olishda xatolik:", err);
+    }
+  };
 
   // Joriy haftaning kunlari va sanalarini hisoblash (Dushanbadan Shanbagacha)
   const getWeekDates = () => {
@@ -76,9 +87,9 @@ export default function BookNotebook() {
 
   // Dars jadvalidan ushbu sinf va fan qaysi kunlarga qo'yilganini aniqlash
   const scheduledDayIds = timetable.filter(item => 
-    String(item.classId) === String(classId) && 
+    String(item.classId || item.class_id) === String(classId) && 
     item.subject?.toLowerCase().trim() === subject?.toLowerCase().trim()
-  ).map(item => item.day);
+  ).map(item => item.day || item.day_of_week);
 
   // Tanlangan kunda ushbu fan dars jadvalida bormi?
   const hasLessonOnSelectedDay = scheduledDayIds.includes(selectedDay.id);
@@ -127,7 +138,7 @@ export default function BookNotebook() {
     );
   };
 
-  // 💾 Natijani serverga (PostgreSQL bazasiga) saqlash
+  // 💾 Natijani Firebase Firestore'ga saqlash
   const handleSaveDay = async () => {
     if (isLocked || !hasLessonOnSelectedDay) return;
 
@@ -138,21 +149,16 @@ export default function BookNotebook() {
     };
 
     try {
-      const response = await fetch('http://localhost:5000/api/book-records', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record_key: recordKey, data: payloadData })
+      await setDoc(doc(db, 'book_notebook_records', recordKey), {
+        record_key: recordKey,
+        data: payloadData
       });
 
-      if (response.ok) {
-        setRecords(prev => ({ ...prev, [recordKey]: payloadData }));
-        showToast(`${selectedDay.name} kunlik natijalar bazaga saqlandi!`);
-      } else {
-        alert("Saqlashda xatolik yuz berdi!");
-      }
+      setRecords(prev => ({ ...prev, [recordKey]: payloadData }));
+      showToast(`${selectedDay.name} kunlik natijalar bazaga saqlandi!`);
     } catch (err) {
-      console.error("Serverga ulanish xatosi:", err);
-      alert("Server bilan aloqa yo'q!");
+      console.error("Firebase'ga saqlashda xatolik:", err);
+      alert("Ma'lumotlarni saqlashda xatolik yuz berdi!");
     }
   };
 

@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Award } from 'lucide-react';
-import { getAdmins } from '../services/api';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function Home() {
   const [adminList, setAdminList] = useState([]);
 
-  // Sahifa ochilganda server bazasidan ma'muriyat xodimlarini tortib kelish
+  // Sahifa ochilganda Firebase Firestore bazasidan ma'muriyat xodimlarini tortib kelish
   useEffect(() => {
     loadAdmins();
   }, []);
 
   const loadAdmins = async () => {
     try {
-      const data = await getAdmins();
-      setAdminList(data || []);
+      const querySnapshot = await getDocs(collection(db, 'school_admins'));
+      const admins = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAdminList(admins);
     } catch (err) {
       console.error("Ma'lumotlarni yuklashda xatolik:", err);
     }
@@ -59,7 +64,7 @@ export default function Home() {
                 <div className="flex justify-between items-start">
                   <div className="flex items-center space-x-3.5">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm uppercase shadow-md shadow-blue-500/20">
-                      {item.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {item.name ? item.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'AD'}
                     </div>
                     <div>
                       <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">{item.name}</h3>

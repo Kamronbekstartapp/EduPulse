@@ -11,6 +11,8 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const formatPhoneNumber = (value) => {
   if (!value) return '+998 ';
@@ -27,63 +29,44 @@ const formatPhoneNumber = (value) => {
   return result;
 };
 
-const defaultClasses = [
-  { id: '9-A', name: '9-A sinf', teacher: 'Azizov Murod', teacherPhone: '+998 90 111 22 33' },
-  { id: '9-B', name: '9-B sinf', teacher: 'Karimova Zilola', teacherPhone: '+998 91 222 33 44' },
-  { id: '10-A', name: '10-A sinf', teacher: 'Tayinlanmagan', teacherPhone: '+998 93 333 44 55' },
-];
-
-const defaultStudents = [
-  {
-    id: 'STU-01',
-    fullName: 'Aliyev Samar Botirovich',
-    grade: '9-A',
-    parentName: 'Aliyev Botir'
-  },
-  {
-    id: 'STU-02',
-    fullName: 'Karimova Zilola Rustamovna',
-    grade: '9-A',
-    parentName: 'Karimova Umida'
-  }
-];
-
 export default function StudentsManagement() {
   const navigate = useNavigate();
 
-  const [teachersList, setTeachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
-  const [classesList, setClassesList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_classes');
-    return saved ? JSON.parse(saved) : defaultClasses;
-  });
+  const [teachersList, setTeachersList] = useState([]);
+  const [classesList, setClassesList] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
 
-  const [studentsList, setStudentsList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_students');
-    return saved ? JSON.parse(saved) : defaultStudents;
-  });
-
+  // Firestore'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    const handleStorageChange = () => {
-      const savedClasses = localStorage.getItem('edupulse_classes');
-      if (savedClasses) setClassesList(JSON.parse(savedClasses));
-
-      const savedTeachers = localStorage.getItem('edupulse_teachers');
-      if (savedTeachers) setTeachersList(JSON.parse(savedTeachers));
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    handleStorageChange();
-
-    return () => window.removeEventListener('storage', handleStorageChange);
+    loadDataFromFirebase();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('edupulse_classes', JSON.stringify(classesList));
-  }, [classesList]);
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-  useEffect(() => {
-    localStorage.setItem('edupulse_students', JSON.stringify(studentsList));
-  }, [studentsList]);
+      // 2. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      const classesData = classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setClassesList(classesData.length > 0 ? classesData : [
+        { id: '9-A', name: '9-A sinf', teacher: 'Azizov Murod', teacherPhone: '+998 90 111 22 33' },
+        { id: '9-B', name: '9-B sinf', teacher: 'Karimova Zilola', teacherPhone: '+998 91 222 33 44' },
+        { id: '10-A', name: '10-A sinf', teacher: 'Tayinlanmagan', teacherPhone: '+998 93 333 44 55' },
+      ]);
+
+      // 3. O'quvchilarni yuklash
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const studentsData = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setStudentsList(studentsData.length > 0 ? studentsData : [
+        { id: 'STU-01', fullName: 'Aliyev Samar Botirovich', grade: '9-A', parentName: 'Aliyev Botir' },
+        { id: 'STU-02', fullName: 'Karimova Zilola Rustamovna', grade: '9-A', parentName: 'Karimova Umida' }
+      ]);
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
 
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
@@ -94,7 +77,7 @@ export default function StudentsManagement() {
   const [newStudent, setNewStudent] = useState({
     fullName: '',
     parentName: '',
-    grade: classesList[0]?.id || ''
+    grade: ''
   });
 
   const [newClass, setNewClass] = useState({
@@ -110,70 +93,106 @@ export default function StudentsManagement() {
   };
 
   const handleNewClassTeacherSelect = (teacherFullName) => {
-    const selectedTeacher = teachersList.find(t => t.fullName === teacherFullName);
+    const selectedTeacher = teachersList.find(t => (t.fullName || t.full_name) === teacherFullName);
     setNewClass(prev => ({
       ...prev,
       teacherName: teacherFullName || 'Tayinlanmagan',
-      teacherPhone: selectedTeacher && selectedTeacher.phone ? selectedTeacher.phone : '+998 '
+      teacherPhone: selectedTeacher && (selectedTeacher.phone || selectedTeacher.teacher_phone) ? (selectedTeacher.phone || selectedTeacher.teacher_phone) : '+998 '
     }));
   };
 
   const handleEditClassTeacherSelect = (teacherFullName) => {
-    const selectedTeacher = teachersList.find(t => t.fullName === teacherFullName);
+    const selectedTeacher = teachersList.find(t => (t.fullName || t.full_name) === teacherFullName);
     setEditingClass(prev => ({
       ...prev,
       teacher: teacherFullName || 'Tayinlanmagan',
-      teacherPhone: selectedTeacher && selectedTeacher.phone ? selectedTeacher.phone : '+998 '
+      teacherPhone: selectedTeacher && (selectedTeacher.phone || selectedTeacher.teacher_phone) ? (selectedTeacher.phone || selectedTeacher.teacher_phone) : '+998 '
     }));
   };
 
-  const handleAddStudent = (e) => {
+  const handleAddStudent = async (e) => {
     e.preventDefault();
-    if (!newStudent.fullName || !newStudent.grade) return;
+    const targetGrade = newStudent.grade || classesList[0]?.id || classesList[0]?.class_id;
+    if (!newStudent.fullName || !targetGrade) return;
 
+    const studentId = `STU-${Date.now().toString().slice(-4)}`;
     const studentObj = {
-      id: `STU-${Date.now().toString().slice(-4)}`,
+      student_id: studentId,
       fullName: newStudent.fullName,
-      grade: newStudent.grade,
-      parentName: newStudent.parentName || 'Ota-onasi'
+      full_name: newStudent.fullName,
+      grade: targetGrade,
+      parentName: newStudent.parentName || 'Ota-onasi',
+      parent_name: newStudent.parentName || 'Ota-onasi'
     };
 
-    setStudentsList(prev => [...prev, studentObj]);
-    setNewStudent({ fullName: '', parentName: '', grade: classesList[0]?.id || '' });
-    setIsAddStudentOpen(false);
-    showToast("Yangi o'quvchi muvaffaqiyatli qo'shildi!");
+    try {
+      await setDoc(doc(db, 'students', studentId), studentObj);
+      setStudentsList(prev => [...prev, { id: studentId, ...studentObj }]);
+      setNewStudent({ fullName: '', parentName: '', grade: classesList[0]?.id || classesList[0]?.class_id || '' });
+      setIsAddStudentOpen(false);
+      showToast("Yangi o'quvchi muvaffaqiyatli qo'shildi!");
+    } catch (err) {
+      console.error("O'quvchi qo'shishda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleAddClass = (e) => {
+  const handleAddClass = async (e) => {
     e.preventDefault();
     if (!newClass.gradeNumber || !newClass.gradeLetter) return;
 
     const classId = `${newClass.gradeNumber}-${newClass.gradeLetter.toUpperCase()}`;
     const classObj = {
-      id: classId,
+      class_id: classId,
       name: `${classId} sinf`,
       teacher: newClass.teacherName || 'Tayinlanmagan',
       teacherPhone: newClass.teacherPhone.length > 5 ? newClass.teacherPhone : 'Kiritilmagan'
     };
 
-    setClassesList(prev => [...prev, classObj]);
-    setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ' });
-    setIsAddClassOpen(false);
-    showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
+    try {
+      await setDoc(doc(db, 'classes', classId), classObj);
+      setClassesList(prev => [...prev.filter(c => c.id !== classId && c.class_id !== classId), { id: classId, ...classObj }]);
+      setNewClass({ gradeNumber: '', gradeLetter: '', teacherName: '', teacherPhone: '+998 ' });
+      setIsAddClassOpen(false);
+      showToast("Yangi sinf muvaffaqiyatli qo'shildi!");
+    } catch (err) {
+      console.error("Sinf qo'shishda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleUpdateClass = (e) => {
+  const handleUpdateClass = async (e) => {
     e.preventDefault();
-    setClassesList(prev => prev.map(c => c.id === editingClass.id ? editingClass : c));
-    setEditingClass(null);
-    showToast("Sinf ma'lumotlari yangilandi!");
+    const cId = editingClass.id || editingClass.class_id;
+    try {
+      const payload = {
+        class_id: cId,
+        name: editingClass.name,
+        teacher: editingClass.teacher || 'Tayinlanmagan',
+        teacherPhone: editingClass.teacherPhone || 'Kiritilmagan'
+      };
+
+      await setDoc(doc(db, 'classes', cId), payload, { merge: true });
+      setClassesList(prev => prev.map(c => (c.id === cId || c.class_id === cId) ? { ...c, ...payload } : c));
+      setEditingClass(null);
+      showToast("Sinf ma'lumotlari yangilandi!");
+    } catch (err) {
+      console.error("Sinfni yangilashda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleDeleteClass = () => {
-    setClassesList(prev => prev.filter(c => c.id !== deletingClassId));
-    setStudentsList(prev => prev.filter(s => s.grade !== deletingClassId));
-    setDeletingClassId(null);
-    showToast("Sinf va uning o'quvchilari o'chirildi!");
+  const handleDeleteClass = async () => {
+    try {
+      await deleteDoc(doc(db, 'classes', deletingClassId));
+      setClassesList(prev => prev.filter(c => c.id !== deletingClassId && c.class_id !== deletingClassId));
+      setStudentsList(prev => prev.filter(s => s.grade !== deletingClassId));
+      setDeletingClassId(null);
+      showToast("Sinf va uning o'quvchilari o'chirildi!");
+    } catch (err) {
+      console.error("Sinfni o'chirishda xatolik:", err);
+      showToast("O'chirishda xatolik yuz berdi!");
+    }
   };
 
   return (
@@ -216,27 +235,28 @@ export default function StudentsManagement() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {classesList.map((cls) => {
-          const count = studentsList.filter(s => s.grade === cls.id).length;
+          const clsId = cls.id || cls.class_id;
+          const count = studentsList.filter(s => s.grade === clsId || s.grade === cls.name).length;
 
-          // Ustoz bazada haqiqatdan ham bormi yoki o'chib ketganmi tekshiramiz
+          const clsTeacher = cls.teacher || cls.teacher_name;
           const isTeacherExists = teachersList.some(
-            t => t.fullName && cls.teacher && t.fullName.trim().toLowerCase() === cls.teacher.trim().toLowerCase()
+            t => (t.fullName || t.full_name) && clsTeacher && (t.fullName || t.full_name).trim().toLowerCase() === clsTeacher.trim().toLowerCase()
           );
-          const displayTeacher = (isTeacherExists && cls.teacher && cls.teacher !== 'Tayinlanmagan') ? cls.teacher : 'Tayinlanmagan';
-          const displayPhone = isTeacherExists ? cls.teacherPhone : 'Kiritilmagan';
+          const displayTeacher = (isTeacherExists && clsTeacher && clsTeacher !== 'Tayinlanmagan') ? clsTeacher : 'Tayinlanmagan';
+          const displayPhone = isTeacherExists ? (cls.teacherPhone || cls.teacher_phone) : 'Kiritilmagan';
 
           return (
             <div
-              key={cls.id}
+              key={clsId}
               className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm hover:shadow-md transition space-y-3 relative group"
             >
               <div
-                onClick={() => navigate(`/students-management/${cls.id}`)}
+                onClick={() => navigate(`/students-management/${clsId}`)}
                 className="cursor-pointer space-y-3"
               >
                 <div className="flex justify-between items-center pr-16">
                   <span className="bg-blue-50 text-blue-700 font-black text-sm px-3 py-1 rounded-xl">
-                    {cls.name}
+                    {cls.name || clsId}
                   </span>
                 </div>
 
@@ -261,7 +281,7 @@ export default function StudentsManagement() {
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setDeletingClassId(cls.id); }}
+                  onClick={(e) => { e.stopPropagation(); setDeletingClassId(clsId); }}
                   className="p-2 bg-slate-50 text-slate-600 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition active:scale-95"
                   title="Sinfni o'chirish"
                 >
@@ -312,9 +332,12 @@ export default function StudentsManagement() {
                   onChange={(e) => setNewStudent({ ...newStudent, grade: e.target.value })}
                   className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
                 >
-                  {classesList.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {classesList.map(c => {
+                    const cId = c.id || c.class_id;
+                    return (
+                      <option key={cId} value={cId}>{c.name || cId}</option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -368,11 +391,14 @@ export default function StudentsManagement() {
                   className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
                 >
                   <option value="">Tayinlanmagan</option>
-                  {teachersList.map(t => (
-                    <option key={t.id || t.fullName} value={t.fullName}>
-                      {t.fullName} {t.subject ? `(${t.subject})` : ''}
-                    </option>
-                  ))}
+                  {teachersList.map(t => {
+                    const tName = t.fullName || t.full_name;
+                    return (
+                      <option key={t.id || tName} value={tName}>
+                        {tName} {t.subject ? `(${t.subject})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -417,16 +443,19 @@ export default function StudentsManagement() {
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Ismi-Sharifi</label>
                 <select
-                  value={editingClass.teacher || ''}
+                  value={editingClass.teacher || editingClass.teacher_name || ''}
                   onChange={(e) => handleEditClassTeacherSelect(e.target.value)}
                   className="w-full p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white"
                 >
                   <option value="">Tayinlanmagan</option>
-                  {teachersList.map(t => (
-                    <option key={t.id || t.fullName} value={t.fullName}>
-                      {t.fullName} {t.subject ? `(${t.subject})` : ''}
-                    </option>
-                  ))}
+                  {teachersList.map(t => {
+                    const tName = t.fullName || t.full_name;
+                    return (
+                      <option key={t.id || tName} value={tName}>
+                        {tName} {t.subject ? `(${t.subject})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -434,7 +463,7 @@ export default function StudentsManagement() {
                 <label className="block font-bold text-slate-700 mb-1">Sinf Rahbari Telefoni</label>
                 <input
                   type="text"
-                  value={editingClass.teacherPhone}
+                  value={editingClass.teacherPhone || editingClass.teacher_phone || ''}
                   onChange={(e) => setEditingClass({ ...editingClass, teacherPhone: formatPhoneNumber(e.target.value) })}
                   className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
                 />

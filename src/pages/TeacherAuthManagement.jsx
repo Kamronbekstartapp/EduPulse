@@ -11,37 +11,16 @@ import {
   Check,
   FileSpreadsheet
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const PERMISSION_DOWNLOAD_REPORT = {
   id: 'can_download_school_report',
   label: "Butun maktab bo'yicha hisobotni yuklab olish"
 };
 
-const defaultUsers = [
-  {
-    id: 'USR-1',
-    fullName: 'Azizov Murod',
-    username: 'murod',
-    password: '123',
-    position: 'Sinf rahbari',
-    canDownloadReport: false
-  },
-  {
-    id: 'USR-2',
-    fullName: 'Karimova Zilola',
-    username: 'zilola',
-    password: '123',
-    position: 'Zavuch',
-    canDownloadReport: true
-  }
-];
-
 export default function TeacherAuthManagement() {
-  const [userList, setUserList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_teacher_accounts');
-    return saved ? JSON.parse(saved) : defaultUsers;
-  });
-
+  const [userList, setUserList] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [showPasswords, setShowPasswords] = useState({});
@@ -56,9 +35,41 @@ export default function TeacherAuthManagement() {
     canDownloadReport: false
   });
 
+  // Firestore'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    localStorage.setItem('edupulse_teacher_accounts', JSON.stringify(userList));
-  }, [userList]);
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'teacher_accounts'));
+      const users = querySnapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      
+      setUserList(users.length > 0 ? users : [
+        {
+          id: 'USR-1',
+          fullName: 'Azizov Murod',
+          username: 'murod',
+          password: '123',
+          position: 'Sinf rahbari',
+          canDownloadReport: false
+        },
+        {
+          id: 'USR-2',
+          fullName: 'Karimova Zilola',
+          username: 'zilola',
+          password: '123',
+          position: 'Zavuch',
+          canDownloadReport: true
+        }
+      ]);
+    } catch (err) {
+      console.error("Akkauntlarni yuklashda xatolik:", err);
+    }
+  };
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -85,9 +96,9 @@ export default function TeacherAuthManagement() {
   const openModalForEdit = (acc) => {
     setEditingUserId(acc.id);
     setFormAcc({
-      fullName: acc.fullName,
-      username: acc.username,
-      password: acc.password,
+      fullName: acc.fullName || acc.full_name || '',
+      username: acc.username || '',
+      password: acc.password || '',
       position: acc.position || "Fan o'qituvchisi",
       canDownloadReport: !!acc.canDownloadReport
     });
@@ -95,7 +106,7 @@ export default function TeacherAuthManagement() {
     setIsModalOpen(true);
   };
 
-  const handleSaveAccount = (e) => {
+  const handleSaveAccount = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -112,55 +123,80 @@ export default function TeacherAuthManagement() {
       return;
     }
 
-    if (editingUserId) {
-      setUserList(prev => prev.map(u =>
-        u.id === editingUserId
-          ? { ...u, ...formAcc, username: cleanUsername }
-          : u
-      ));
-      showToast("O'qituvchi ma'lumotlari va ruxsati yangilandi!");
-    } else {
-      const accountObj = {
-        id: `USR-${Date.now().toString().slice(-4)}`,
-        ...formAcc,
-        username: cleanUsername
-      };
-      setUserList(prev => [...prev, accountObj]);
-      showToast("Yangi o'qituvchi muvaffaqiyatli saqlandi!");
-    }
+    try {
+      if (editingUserId) {
+        const payload = {
+          fullName: formAcc.fullName,
+          full_name: formAcc.fullName,
+          username: cleanUsername,
+          password: formAcc.password,
+          position: formAcc.position,
+          canDownloadReport: formAcc.canDownloadReport
+        };
 
-    setIsModalOpen(false);
+        await setDoc(doc(db, 'teacher_accounts', editingUserId), payload, { merge: true });
+        setUserList(prev => prev.map(u => u.id === editingUserId ? { ...u, ...payload } : u));
+        showToast("O'qituvchi ma'lumotlari va ruxsati yangilandi!");
+      } else {
+        const userId = `USR-${Date.now().toString().slice(-4)}`;
+        const accountObj = {
+          fullName: formAcc.fullName,
+          full_name: formAcc.fullName,
+          username: cleanUsername,
+          password: formAcc.password,
+          position: formAcc.position,
+          canDownloadReport: formAcc.canDownloadReport
+        };
+
+        await setDoc(doc(db, 'teacher_accounts', userId), accountObj);
+        setUserList(prev => [...prev, { id: userId, ...accountObj }]);
+        showToast("Yangi o'qituvchi muvaffaqiyatli saqlandi!");
+      }
+
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error("Akkauntni saqlashda xatolik:", err);
+      setErrorMsg("Saqlashda xatolik yuz berdi!");
+    }
   };
 
   // Akkaunt o'chirilganda uning asosiy teachers ma'lumotlari va sinf rahbarligini ham tozalash
-  const handleDeleteAccount = (id) => {
+  const handleDeleteAccount = async (id) => {
     const accountToDelete = userList.find(u => u.id === id);
     if (!accountToDelete) return;
 
-    // 1. Akkauntni o'chirish
-    setUserList(prev => prev.filter(u => u.id !== id));
+    try {
+      // 1. Akkauntni Firestore'dan o'chirish
+      await deleteDoc(doc(db, 'teacher_accounts', id));
+      setUserList(prev => prev.filter(u => u.id !== id));
 
-    // 2. Asosiy 'edupulse_teachers' ro'yxatidan ham shu ismli ustozni topib o'chirish va sinfini bo'shatish
-    const savedTeachers = JSON.parse(localStorage.getItem('edupulse_teachers') || '[]');
-    const targetTeacher = savedTeachers.find(t => t.fullName.toLowerCase().trim() === accountToDelete.fullName.toLowerCase().trim());
+      // 2. 'teachers' va 'classes' kolleksiyalarini ham tozalash (agar mavjud bo'lsa)
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      const targetTeacher = teachersSnap.docs.find(docSnap => {
+        const tData = docSnap.data();
+        const tName = tData.fullName || tData.full_name || '';
+        return tName.toLowerCase().trim() === (accountToDelete.fullName || '').toLowerCase().trim();
+      });
 
-    if (targetTeacher) {
-      const updatedTeachers = savedTeachers.filter(t => t.id !== targetTeacher.id);
-      localStorage.setItem('edupulse_teachers', JSON.stringify(updatedTeachers));
+      if (targetTeacher) {
+        await deleteDoc(doc(db, 'teachers', targetTeacher.id));
+        const tData = targetTeacher.data();
+        const assignedClass = tData.assignedClass || tData.assigned_class;
 
-      // Agar uning biriktirilgan sinfi bo'lsa, uni ham classes'dan tozalaymiz
-      if (targetTeacher.assignedClass) {
-        const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
-        const updatedClasses = savedClasses.map(c =>
-          c.id === targetTeacher.assignedClass || c.name === targetTeacher.assignedClass
-            ? { ...c, teacher: '', teacherPhone: '' }
-            : c
-        );
-        localStorage.setItem('edupulse_classes', JSON.stringify(updatedClasses));
+        if (assignedClass) {
+          const classesSnap = await getDocs(collection(db, 'classes'));
+          const targetClassDoc = classesSnap.docs.find(docSnap => docSnap.id === assignedClass || docSnap.data().name === assignedClass);
+          if (targetClassDoc) {
+            await setDoc(doc(db, 'classes', targetClassDoc.id), { teacher: 'Tayinlanmagan', teacherPhone: 'Kiritilmagan' }, { merge: true });
+          }
+        }
       }
-    }
 
-    showToast("Akkount, o'qituvchi ma'lumotlari va sinf rahbarligi to'liq o'chirildi!");
+      showToast("Akkount, o'qituvchi ma'lumotlari va sinf rahbarligi to'liq o'chirildi!");
+    } catch (err) {
+      console.error("Akkountni o'chirishda xatolik:", err);
+      showToast("O'chirishda xatolik yuz berdi!");
+    }
   };
 
   return (
@@ -192,80 +228,83 @@ export default function TeacherAuthManagement() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {userList.map((acc) => (
-          <div key={acc.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
-            <div className="flex justify-between items-start pr-16">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-sm">{acc.fullName}</h3>
-                  <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                    {acc.position}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute top-4 right-4 flex items-center space-x-1">
-              <button
-                onClick={() => openModalForEdit(acc)}
-                className="p-2 bg-slate-50 text-slate-500 hover:text-blue-600 rounded-xl transition"
-                title="Tahrirlash"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleDeleteAccount(acc.id)}
-                className="p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
-                title="O'chirish"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-xs space-y-2 pt-2 border-t border-slate-100 font-medium">
-              <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
-                <span className="text-slate-400 font-semibold">Login:</span>
-                <span className="font-bold text-slate-800">{acc.username}</span>
-              </div>
-
-              <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
-                <span className="text-slate-400 font-semibold">Parol:</span>
-                <div className="flex items-center space-x-2">
-                  <span className="font-bold text-emerald-600">
-                    {showPasswords[acc.id] ? acc.password : '••••••••'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => togglePasswordVisibility(acc.id)}
-                    className="text-slate-400 hover:text-slate-700"
-                  >
-                    {showPasswords[acc.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hisobot Yuklash Ruxsati:</p>
-                <div>
-                  {acc.canDownloadReport ? (
-                    <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
-                      <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
-                      <span>Ruxsat Berilgan</span>
+        {userList.map((acc) => {
+          const accName = acc.fullName || acc.full_name;
+          return (
+            <div key={acc.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
+              <div className="flex justify-between items-start pr-16">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">{accName}</h3>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                      {acc.position}
                     </span>
-                  ) : (
-                    <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
-                      <X className="w-3 h-3 text-rose-500" />
-                      <span>Ruxsat Yo'q</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="absolute top-4 right-4 flex items-center space-x-1">
+                <button
+                  onClick={() => openModalForEdit(acc)}
+                  className="p-2 bg-slate-50 text-slate-500 hover:text-blue-600 rounded-xl transition"
+                  title="Tahrirlash"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDeleteAccount(acc.id)}
+                  className="p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
+                  title="O'chirish"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="text-xs space-y-2 pt-2 border-t border-slate-100 font-medium">
+                <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <span className="text-slate-400 font-semibold">Login:</span>
+                  <span className="font-bold text-slate-800">{acc.username}</span>
+                </div>
+
+                <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <span className="text-slate-400 font-semibold">Parol:</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-emerald-600">
+                      {showPasswords[acc.id] ? acc.password : '••••••••'}
                     </span>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility(acc.id)}
+                      className="text-slate-400 hover:text-slate-700"
+                    >
+                      {showPasswords[acc.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hisobot Yuklash Ruxsati:</p>
+                  <div>
+                    {acc.canDownloadReport ? (
+                      <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
+                        <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+                        <span>Ruxsat Berilgan</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
+                        <X className="w-3 h-3 text-rose-500" />
+                        <span>Ruxsat Yo'q</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {isModalOpen && (

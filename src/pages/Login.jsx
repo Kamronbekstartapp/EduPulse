@@ -1,59 +1,69 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, User, AlertCircle } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     const inputUser = username.trim().toLowerCase();
     const inputPass = password.trim();
 
     if (!inputUser || !inputPass) {
       setError('Iltimos, login va parolni kiriting!');
+      setLoading(false);
       return;
     }
 
-    // 1. Admin tekshiruvi (rahbar / 12345)
-    if (inputUser === 'rahbar' || inputUser === 'admin') {
-      if (inputPass === 'admin123') {
-        onLogin({
-          username: 'Admin',
-          role: 'administrator',
-          position: 'Bosh Admin'
-        });
-        return;
-      } else {
-        // Admin borligini bildirmaslik uchun umumiy xato beramiz
-        setError('Login yoki parol xato!');
-        return;
+    try {
+      // 1. Admin tekshiruvi (rahbar / admin)
+      if (inputUser === 'rahbar' || inputUser === 'admin') {
+        if (inputPass === 'admin123') {
+          onLogin({
+            username: 'Admin',
+            role: 'administrator',
+            position: 'Bosh Admin'
+          });
+          return;
+        } else {
+          setError('Login yoki parol xato!');
+          setLoading(false);
+          return;
+        }
       }
-    }
 
-    // 2. Qo'shilgan O'qituvchilar bazasini olish
-    const savedAccounts = JSON.parse(localStorage.getItem('edupulse_teacher_accounts') || '[]');
+      // 2. Firebase Firestore'dan o'qituvchi akkauntlarini tekshirish
+      const q = query(collection(db, 'teacher_accounts'), where('username', '==', inputUser));
+      const querySnapshot = await getDocs(q);
 
-    // Tizimda shu loginli o'qituvchi bormi?
-    const foundUser = savedAccounts.find(u => u.username.toLowerCase() === inputUser);
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0].data();
 
-    if (foundUser) {
-      // O'qituvchi logini bor, parolini tekshiramiz
-      if (foundUser.password === inputPass) {
-        onLogin({
-          username: foundUser.fullName,
-          role: 'teacher',
-          position: foundUser.position || 'O\'qituvchi'
-        });
+        if (userDoc.password === inputPass) {
+          onLogin({
+            username: userDoc.full_name || userDoc.fullName,
+            role: 'teacher',
+            position: userDoc.position || "O'qituvchi"
+          });
+        } else {
+          setError("Ushbu o'qituvchi tizimda mavjud, lekin kiritilgan parol xato!");
+        }
       } else {
-        // Faqat o'qituvchilar uchun maxsus xatolik
-        setError('Ushbu o\'qituvchi tizimda mavjud, lekin kiritilgan parol xato!');
+        setError('Bunday loginli foydalanuvchi topilmadi!');
       }
-    } else {
-      setError('Bunday loginli foydalanuvchi topilmadi!');
+    } catch (err) {
+      console.error("Kirishda xatolik:", err);
+      setError("Tizimga kirishda xatolik yuz berdi!");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -108,9 +118,10 @@ export default function Login({ onLogin }) {
 
           <button 
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-blue-500/25 transition active:scale-95 text-sm"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-blue-500/25 transition active:scale-95 text-sm"
           >
-            Tizimga Kirish
+            {loading ? "Tekshirilmoqda..." : "Tizimga Kirish"}
           </button>
         </form>
       </div>

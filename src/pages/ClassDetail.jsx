@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   Users
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const formatPhoneNumber = (value) => {
   if (!value) return '+998 ';
@@ -29,47 +31,78 @@ export default function ClassDetail() {
   const { classId } = useParams(); // URL dagi sinf ID si (masalan: 9-A)
   const navigate = useNavigate();
 
-  const [classesList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_classes');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [studentsList, setStudentsList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_students');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [classesList, setClassesList] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
 
   const [editingStudent, setEditingStudent] = useState(null);
   const [deletingStudentId, setDeletingStudentId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
-  // Ma'lumotlar o'zgarganda localStorage ga saqlash
+  // Firestore'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    localStorage.setItem('edupulse_students', JSON.stringify(studentsList));
-  }, [studentsList]);
+    loadDataFromFirebase();
+  }, []);
 
-  const currentClass = classesList.find(c => c.id === classId);
-  const classStudents = studentsList.filter(s => s.grade === classId);
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 2. O'quvchilarni yuklash
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
+
+  const currentClass = classesList.find(c => c.id === classId || c.class_id === classId || c.name === classId);
+  const classStudents = studentsList.filter(s => s.grade === classId || s.class_id === classId);
 
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const handleUpdateStudent = (e) => {
+  const handleUpdateStudent = async (e) => {
     e.preventDefault();
-    setStudentsList(prev => prev.map(s => s.id === editingStudent.id ? editingStudent : s));
-    setEditingStudent(null);
-    showToast("O'quvchi ma'lumotlari yangilandi!");
+    try {
+      const studentId = editingStudent.student_id || editingStudent.id;
+      const payload = {
+        student_id: studentId,
+        full_name: editingStudent.fullName || editingStudent.full_name,
+        grade: editingStudent.grade || classId,
+        studentPhone: editingStudent.studentPhone || '',
+        parentName: editingStudent.parentName || '',
+        parentPhone: editingStudent.parentPhone || ''
+      };
+
+      // Firestore'da o'quvchini yangilash
+      await setDoc(doc(db, 'students', studentId), payload, { merge: true });
+      
+      setStudentsList(prev => prev.map(s => (s.id === studentId || s.student_id === studentId) ? { ...s, ...payload } : s));
+      setEditingStudent(null);
+      showToast("O'quvchi ma'lumotlari yangilandi!");
+    } catch (err) {
+      console.error("O'quvchini yangilashda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleDeleteStudent = () => {
-    setStudentsList(prev => prev.filter(s => s.id !== deletingStudentId));
-    setDeletingStudentId(null);
-    showToast("O'quvchi o'chirildi!");
+  const handleDeleteStudent = async () => {
+    try {
+      await deleteDoc(doc(db, 'students', deletingStudentId));
+      setStudentsList(prev => prev.filter(s => s.id !== deletingStudentId && s.student_id !== deletingStudentId));
+      setDeletingStudentId(null);
+      showToast("O'quvchi o'chirildi!");
+    } catch (err) {
+      console.error("O'quvchini o'chirishda xatolik:", err);
+      showToast("O'chirishda xatolik yuz berdi!");
+    }
   };
 
-  if (!currentClass) {
+  if (!currentClass && classesList.length > 0) {
     return (
       <div className="p-8 text-center space-y-4">
         <h2 className="text-xl font-bold text-slate-800">Sinf topilmadi!</h2>
@@ -99,19 +132,19 @@ export default function ClassDetail() {
       </button>
 
       {/* Sinf Ma'lumotlari Header */}
-<div>
-  <div className="flex items-center space-x-3">
-    <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-      {currentClass.name}
-    </h2>
-    <span className="bg-blue-100 text-blue-700 font-extrabold text-xs px-3 py-1 rounded-full">
-      {classStudents.length} ta o'quvchi
-    </span>
-  </div>
-  <p className="text-slate-500 text-xs sm:text-sm mt-1">
-    Sinf rahbari: <strong className="text-slate-800">{currentClass.teacher}</strong> ({currentClass.teacherPhone})
-  </p>
-</div>
+      <div>
+        <div className="flex items-center space-x-3">
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            {currentClass?.name || classId}
+          </h2>
+          <span className="bg-blue-100 text-blue-700 font-extrabold text-xs px-3 py-1 rounded-full">
+            {classStudents.length} ta o'quvchi
+          </span>
+        </div>
+        <p className="text-slate-500 text-xs sm:text-sm mt-1">
+          Sinf rahbari: <strong className="text-slate-800">{currentClass?.teacher || currentClass?.teacher_name || 'Tayinlanmagan'}</strong> ({currentClass?.teacherPhone || currentClass?.teacher_phone || ''})
+        </p>
+      </div>
 
       {/* O'quvchilar Grid */}
       <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm space-y-4">
@@ -121,44 +154,48 @@ export default function ClassDetail() {
 
         {classStudents.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {classStudents.map((student) => (
-              <div key={student.id} className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-2xl space-y-3 relative group">
-                <div className="flex justify-between items-start pr-16">
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 text-sm">{student.fullName}</h4>
-                    <p className="text-[10px] text-slate-400 font-medium">{student.id}</p>
+            {classStudents.map((student) => {
+              const stId = student.id || student.student_id;
+              const stName = student.fullName || student.full_name;
+              return (
+                <div key={stId} className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-2xl space-y-3 relative group">
+                  <div className="flex justify-between items-start pr-16">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">{stName}</h4>
+                      <p className="text-[10px] text-slate-400 font-medium">{stId}</p>
+                    </div>
+                  </div>
+
+                  <div className="absolute top-3 right-3 flex items-center space-x-1">
+                    <button
+                      onClick={() => setEditingStudent({ ...student, fullName: stName })}
+                      className="p-2 bg-white text-slate-600 hover:text-blue-600 rounded-xl border border-slate-200 shadow-sm transition active:scale-95"
+                      title="Tahrirlash"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingStudentId(stId)}
+                      className="p-2 bg-white text-slate-600 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition active:scale-95"
+                      title="O'chirish"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="text-xs space-y-1 text-slate-600 pt-1 border-t border-slate-200/50">
+                    <p className="flex items-center space-x-2">
+                      <PhoneCall className="w-3.5 h-3.5 text-blue-500" />
+                      <span>O'quvchi: <strong>{student.studentPhone || 'Kiritilmagan'}</strong></span>
+                    </p>
+                    <p className="flex items-center space-x-2">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Ota-onasi: <strong>{student.parentName || 'Kiritilmagan'} ({student.parentPhone || ''})</strong></span>
+                    </p>
                   </div>
                 </div>
-
-                <div className="absolute top-3 right-3 flex items-center space-x-1">
-                  <button
-                    onClick={() => setEditingStudent(student)}
-                    className="p-2 bg-white text-slate-600 hover:text-blue-600 rounded-xl border border-slate-200 shadow-sm transition active:scale-95"
-                    title="Tahrirlash"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setDeletingStudentId(student.id)}
-                    className="p-2 bg-white text-slate-600 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition active:scale-95"
-                    title="O'chirish"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="text-xs space-y-1 text-slate-600 pt-1 border-t border-slate-200/50">
-                  <p className="flex items-center space-x-2">
-                    <PhoneCall className="w-3.5 h-3.5 text-blue-500" />
-                    <span>O'quvchi: <strong>{student.studentPhone}</strong></span>
-                  </p>
-                  <p className="flex items-center space-x-2">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Ota-onasi: <strong>{student.parentName} ({student.parentPhone})</strong></span>
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-xs text-slate-400 text-center py-12">Ushbu sinfda hozircha o'quvchilar mavjud emas.</p>
@@ -190,7 +227,7 @@ export default function ClassDetail() {
                 <label className="block font-bold text-slate-700 mb-1">O'quvchi Telefoni</label>
                 <input 
                   type="text" 
-                  value={editingStudent.studentPhone}
+                  value={editingStudent.studentPhone || ''}
                   onChange={(e) => setEditingStudent({ ...editingStudent, studentPhone: formatPhoneNumber(e.target.value) })}
                   className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
                 />
@@ -201,7 +238,7 @@ export default function ClassDetail() {
                   <label className="block font-bold text-slate-700 mb-1">Ota-onasi Ismi</label>
                   <input 
                     type="text" 
-                    value={editingStudent.parentName}
+                    value={editingStudent.parentName || ''}
                     onChange={(e) => setEditingStudent({ ...editingStudent, parentName: e.target.value })}
                     className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
                   />
@@ -210,7 +247,7 @@ export default function ClassDetail() {
                   <label className="block font-bold text-slate-700 mb-1">Ota-onasi Telefoni</label>
                   <input 
                     type="text" 
-                    value={editingStudent.parentPhone}
+                    value={editingStudent.parentPhone || ''}
                     onChange={(e) => setEditingStudent({ ...editingStudent, parentPhone: formatPhoneNumber(e.target.value) })}
                     className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-600 font-medium"
                   />

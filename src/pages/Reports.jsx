@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, 
   Download, 
@@ -12,18 +12,52 @@ import {
   X,
   FileCheck
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function Reports() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
   
-  // Real vaqt rejimida doimiy yangilanadigan lokal ma'lumotlar
-  const [classesList] = useState(() => JSON.parse(localStorage.getItem('edupulse_classes') || '[]'));
-  const [studentsList] = useState(() => JSON.parse(localStorage.getItem('edupulse_students') || '[]'));
-  const [teachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
-  const [attendanceRecords] = useState(() => JSON.parse(localStorage.getItem('edupulse_attendance') || '{}'));
+  // Firestore'dan olinadigan real vaqt ma'lumotlari
+  const [classesList, setClassesList] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
+  const [teachersList, setTeachersList] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState({});
 
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [selectedRange, setSelectedRange] = useState('today'); // 'today', 'week', 'month'
+
+  // Firestore'dan ma'lumotlarni yuklab olish
+  useEffect(() => {
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 2. O'quvchilarni yuklash
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 3. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 4. Davomat yozuvlarini yuklash
+      const attendanceSnap = await getDocs(collection(db, 'attendance'));
+      const attObj = {};
+      attendanceSnap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        attObj[docSnap.id] = data.records || data;
+      });
+      setAttendanceRecords(attObj);
+    } catch (err) {
+      console.error("Firebase'dan hisobot ma'lumotlarini yuklashda xatolik:", err);
+    }
+  };
 
   const canDownload = user?.role === 'administrator' || !!user?.canDownloadReport;
 
@@ -52,13 +86,17 @@ export default function Reports() {
     const targetDates = getDatesInRange(daysToCalculate);
 
     return classesList.map(cls => {
+      const clsId = cls.id || cls.class_id;
+
       // Sinf o'quvchilari
-      const classStudents = studentsList.filter(s => s.grade === cls.id);
+      const classStudents = studentsList.filter(s => s.grade === clsId || s.grade === cls.name);
       const totalStudents = classStudents.length;
 
-      // Sinf rahbarini Teachers ro'yxatidan qidirish (Eng so'nggi real ma'lumot)
-      const assignedTeacherObj = teachersList.find(t => t.assignedClass === cls.id);
-      const currentTeacherName = assignedTeacherObj ? assignedTeacherObj.fullName : (cls.teacher || 'Biriktirilmagan');
+      // Sinf rahbarini Teachers ro'yxatidan qidirish
+      const assignedTeacherObj = teachersList.find(t => (t.assignedClass || t.assigned_class) === clsId);
+      const currentTeacherName = assignedTeacherObj 
+        ? (assignedTeacherObj.fullName || assignedTeacherObj.full_name) 
+        : (cls.teacher || cls.teacher_name || 'Biriktirilmagan');
 
       let totalPresent = 0;
       let totalAbsent = 0;
@@ -66,11 +104,12 @@ export default function Reports() {
 
       // Tanlangan kunlar bo'yicha davomat yig'indisi
       targetDates.forEach(dateStr => {
-        const classKey = `${dateStr}_${cls.id}`;
+        const classKey = `${dateStr}_${clsId}`;
         const att = attendanceRecords[classKey] || {};
 
         classStudents.forEach(st => {
-          const status = att[st.id] || 'present';
+          const stId = st.id || st.student_id;
+          const status = att[stId] || 'present';
           if (status === 'present') totalPresent++;
           if (status === 'absent') totalAbsent++;
           if (status === 'excused') totalExcused++;
@@ -83,8 +122,8 @@ export default function Reports() {
         : 100;
 
       return {
-        classId: cls.id,
-        className: cls.name,
+        classId: clsId,
+        className: cls.name || clsId,
         teacher: currentTeacherName,
         totalStudents,
         present: totalPresent,
@@ -114,7 +153,7 @@ export default function Reports() {
     if (selectedRange === 'month') periodTitle = "Bir Oylik (Oxirgi 30 kun)";
 
     let csvContent = "\uFEFF"; // UTF-8 BOM uzbek xarflari to'g'ri chiqishi uchun
-    csvContent += `HYS OBOT NOMI:;EDUPULSE MAKTAB DAVOMAT HISOBOTI\n`;
+    csvContent += `HISOBOT NOMI:;EDUPULSE MAKTAB DAVOMAT HISOBOTI\n`;
     csvContent += `HISOBOT DAVRI:;${periodTitle}\n`;
     csvContent += `YARATILGAN REAL SANA VA VAQT:;${realDateStr} ${realTimeStr}\n\n`;
 

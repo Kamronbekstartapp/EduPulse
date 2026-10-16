@@ -12,7 +12,8 @@ import {
   AlertTriangle,
   Lock
 } from 'lucide-react';
-import { getAdmins, saveAdmin, removeAdmin } from '../services/api';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 // Telefon raqamini avtomatik formatlash (+998 XX XXX XX XX)
 const formatPhoneNumber = (value) => {
@@ -46,15 +47,19 @@ export default function AdminManagement() {
     experience: '5 yil tajriba'
   });
 
-  // Serverdan ma'lumotlarni yuklash
+  // Firebase Firestore'dan ma'lumotlarni yuklash
   useEffect(() => {
     loadAdmins();
   }, []);
 
   const loadAdmins = async () => {
     try {
-      const data = await getAdmins();
-      setAdminList(data || []);
+      const querySnapshot = await getDocs(collection(db, 'school_admins'));
+      const admins = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAdminList(admins);
     } catch (err) {
       console.error("Ma'lumotlarni yuklashda xatolik:", err);
     }
@@ -76,7 +81,7 @@ export default function AdminManagement() {
 
   const handleOpenEditForm = (item) => {
     if (!isAdmin) return;
-    setEditingId(item.admin_id);
+    setEditingId(item.admin_id || item.id);
     setFormData({
       name: item.name,
       title: item.title,
@@ -93,12 +98,14 @@ export default function AdminManagement() {
     if (!formData.name.trim() || !formData.title.trim()) return;
 
     try {
+      const adminId = editingId || `ADM-${Date.now()}`;
       const payload = {
-        admin_id: editingId || `ADM-${Date.now()}`,
+        admin_id: adminId,
         ...formData
       };
 
-      await saveAdmin(payload);
+      // Firestore'ga saqlash (hujjat ID si sifatida admin_id ishlatiladi)
+      await setDoc(doc(db, 'school_admins', adminId), payload);
       await loadAdmins();
 
       setIsFormOpen(false);
@@ -112,7 +119,7 @@ export default function AdminManagement() {
     if (!isAdmin) return;
     if (deleteConfirmId) {
       try {
-        await removeAdmin(deleteConfirmId);
+        await deleteDoc(doc(db, 'school_admins', deleteConfirmId));
         await loadAdmins();
         setDeleteConfirmId(null);
         showToast("Xodim ro'yxatdan o'chirildi!");
@@ -268,7 +275,7 @@ export default function AdminManagement() {
               <div className="flex justify-between items-start pr-12">
                 <div className="flex items-center space-x-3">
                   <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm uppercase">
-                    {admin.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                    {admin.name ? admin.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'AD'}
                   </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 text-sm">{admin.name}</h3>
@@ -286,7 +293,7 @@ export default function AdminManagement() {
                   <Pencil className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setDeleteConfirmId(admin.admin_id)}
+                  onClick={() => setDeleteConfirmId(admin.admin_id || admin.id)}
                   className="p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
                   title="O'chirish"
                 >

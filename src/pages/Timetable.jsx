@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Pencil
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const DAYS = [
   { id: 'mon', name: 'Dushanba' },
@@ -50,27 +52,36 @@ const getSubjectBadgeStyle = (subjectName) => {
 export default function Timetable() {
   const navigate = useNavigate();
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-  const [classesList] = useState(() => JSON.parse(localStorage.getItem('edupulse_classes') || '[]'));
   
-  // O'qituvchilar ro'yxati
-  const [teachersList, setTeachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
+  const [classesList, setClassesList] = useState([]);
+  const [teachersList, setTeachersList] = useState([]);
+  const [timetable, setTimetable] = useState([]);
 
   const [activeShift, setActiveShift] = useState(1); // 1 yoki 2
   const [activeDay, setActiveDay] = useState('mon');
-  const [timetable, setTimetable] = useState(() => JSON.parse(localStorage.getItem('edupulse_timetable') || '[]'));
 
-  // Ustozlar o'zgarganda localStorage dan qayta o'qish
+  // Firestore'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    const handleStorageChange = () => {
-      const savedTeachers = localStorage.getItem('edupulse_teachers');
-      if (savedTeachers) setTeachersList(JSON.parse(savedTeachers));
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    handleStorageChange();
-
-    return () => window.removeEventListener('storage', handleStorageChange);
+    loadDataFromFirebase();
   }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+
+      // 2. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+
+      // 3. Dars jadvalini yuklash
+      const timetableSnap = await getDocs(collection(db, 'timetable'));
+      setTimetable(timetableSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
 
   // Tanlangan smenaga mos sinflarni saralash
   const currentShiftClasses = classesList.filter(c => {
@@ -84,9 +95,9 @@ export default function Timetable() {
   // ActiveShift yoki Sinflar ro'yxati o'zgarganda selectedClassId ni moslash
   useEffect(() => {
     if (currentShiftClasses.length > 0) {
-      const existsInCurrentShift = currentShiftClasses.some(c => c.id === selectedClassId);
+      const existsInCurrentShift = currentShiftClasses.some(c => (c.id || c.class_id) === selectedClassId);
       if (!existsInCurrentShift) {
-        setSelectedClassId(currentShiftClasses[0].id);
+        setSelectedClassId(currentShiftClasses[0].id || currentShiftClasses[0].class_id);
       }
     } else {
       setSelectedClassId('');
@@ -106,10 +117,6 @@ export default function Timetable() {
   });
 
   const isAdmin = user?.role === 'administrator';
-
-  useEffect(() => {
-    localStorage.setItem('edupulse_timetable', JSON.stringify(timetable));
-  }, [timetable]);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -131,9 +138,10 @@ export default function Timetable() {
       return;
     }
 
-    const selectedTeacher = teachersList.find(t => 
-      (t.fullName || t.full_name || t.name) === teacherFullName
-    );
+    const selectedTeacher = teachersList.find(t => {
+      const tName = t.fullName || t.full_name || t.name;
+      return tName === teacherFullName;
+    });
 
     const teacherSub = selectedTeacher ? (selectedTeacher.subject || selectedTeacher.fan || '') : '';
 
@@ -150,9 +158,10 @@ export default function Timetable() {
       return;
     }
 
-    const selectedTeacher = teachersList.find(t => 
-      (t.fullName || t.full_name || t.name) === teacherFullName
-    );
+    const selectedTeacher = teachersList.find(t => {
+      const tName = t.fullName || t.full_name || t.name;
+      return tName === teacherFullName;
+    });
 
     const teacherSub = selectedTeacher ? (selectedTeacher.subject || selectedTeacher.fan || '') : '';
 
@@ -163,7 +172,7 @@ export default function Timetable() {
     }));
   };
 
-  const handleAddLesson = (e) => {
+  const handleAddLesson = async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
     if (!selectedClassId) {
@@ -179,8 +188,8 @@ export default function Timetable() {
       return;
     }
 
+    const lessonId = `TT-${Date.now()}`;
     const newLesson = {
-      id: `TT-${Date.now()}`,
       shift: activeShift,
       day: activeDay,
       classId: selectedClassId,
@@ -191,30 +200,61 @@ export default function Timetable() {
       endTime: formData.endTime
     };
 
-    setTimetable(prev => [
-      ...prev.filter(item => !(item.shift === activeShift && item.day === activeDay && item.classId === selectedClassId && Number(item.lessonNumber) === Number(formData.lessonNumber))),
-      newLesson
-    ]);
+    try {
+      await setDoc(doc(db, 'timetable', lessonId), newLesson);
+      setTimetable(prev => [
+        ...prev.filter(item => !(Number(item.shift || 1) === Number(activeShift) && item.day === activeDay && item.classId === selectedClassId && Number(item.lessonNumber) === Number(formData.lessonNumber))),
+        { id: lessonId, ...newLesson }
+      ]);
 
-    setIsAddModalOpen(false);
-    setFormData({ lessonNumber: 1, subject: '', teacherName: '', startTime: activeShift === 1 ? '08:30' : '13:30', endTime: activeShift === 1 ? '09:15' : '14:15' });
-    showToast("Dars jadvaliga muvaffaqiyatli qo'shildi!");
+      setIsAddModalOpen(false);
+      setFormData({ lessonNumber: 1, subject: '', teacherName: '', startTime: activeShift === 1 ? '08:30' : '13:30', endTime: activeShift === 1 ? '09:15' : '14:15' });
+      showToast("Dars jadvaliga muvaffaqiyatli qo'shildi!");
+    } catch (err) {
+      console.error("Dars qo'shishda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleUpdateLesson = (e) => {
+  const handleUpdateLesson = async (e) => {
     e.preventDefault();
     if (!isAdmin || !editingLesson) return;
 
-    setTimetable(prev => prev.map(item => item.id === editingLesson.id ? editingLesson : item));
-    setEditingLesson(null);
-    showToast("Dars ma'lumotlari yangilandi!");
+    try {
+      const lessonId = editingLesson.id;
+      const payload = {
+        shift: Number(editingLesson.shift || activeShift),
+        day: editingLesson.day,
+        classId: editingLesson.classId,
+        lessonNumber: Number(editingLesson.lessonNumber),
+        subject: editingLesson.subject,
+        teacherName: editingLesson.teacherName,
+        startTime: editingLesson.startTime,
+        endTime: editingLesson.endTime
+      };
+
+      await setDoc(doc(db, 'timetable', lessonId), payload, { merge: true });
+      setTimetable(prev => prev.map(item => item.id === lessonId ? { ...item, ...payload } : item));
+      setEditingLesson(null);
+      showToast("Dars ma'lumotlari yangilandi!");
+    } catch (err) {
+      console.error("Darsni yangilashda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleDeleteLesson = (id, e) => {
+  const handleDeleteLesson = async (id, e) => {
     e.stopPropagation();
     if (!isAdmin) return;
-    setTimetable(prev => prev.filter(item => item.id !== id));
-    showToast("Dars jadvaldan o'chirildi!");
+
+    try {
+      await deleteDoc(doc(db, 'timetable', id));
+      setTimetable(prev => prev.filter(item => item.id !== id));
+      showToast("Dars jadvaldan o'chirildi!");
+    } catch (err) {
+      console.error("Darsni o'chirishda xatolik:", err);
+      showToast("O'chirishda xatolik yuz berdi!");
+    }
   };
 
   const handleLessonClick = (lesson) => {
@@ -232,8 +272,8 @@ export default function Timetable() {
   };
 
   const currentDaySchedule = timetable
-    .filter(item => Number(item.shift || 1) === Number(activeShift) && item.day === activeDay && item.classId === selectedClassId)
-    .sort((a, b) => a.lessonNumber - b.lessonNumber);
+    .filter(item => Number(item.shift || 1) === Number(activeShift) && item.day === activeDay && String(item.classId) === String(selectedClassId))
+    .sort((a, b) => Number(a.lessonNumber || a.lesson_number || 0) - Number(b.lessonNumber || b.lesson_number || 0));
 
   return (
     <div className="px-4 py-6 sm:px-8 max-w-7xl mx-auto space-y-6">
@@ -280,17 +320,20 @@ export default function Timetable() {
           <div className="flex items-center space-x-3 overflow-x-auto pb-2 custom-scrollbar w-full">
             <span className="text-xs font-black text-slate-500 uppercase flex-shrink-0">SINF:</span>
             {currentShiftClasses.length > 0 ? (
-              currentShiftClasses.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedClassId(c.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex-shrink-0 ${
-                    selectedClassId === c.id ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {c.name}
-                </button>
-              ))
+              currentShiftClasses.map(c => {
+                const cId = c.id || c.class_id;
+                return (
+                  <button
+                    key={cId}
+                    onClick={() => setSelectedClassId(cId)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex-shrink-0 ${
+                      selectedClassId === cId ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {c.name || cId}
+                  </button>
+                );
+              })
             ) : (
               <span className="text-xs font-bold text-rose-500 bg-rose-50 px-3 py-1.5 rounded-xl">
                 Ushbu smenada hali sinflar yo'q
@@ -350,6 +393,9 @@ export default function Timetable() {
             currentDaySchedule.map((lesson) => {
               const isMyLesson = isAdmin || lesson.teacherName?.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
               const badgeStyle = getSubjectBadgeStyle(lesson.subject);
+              const lNumber = lesson.lessonNumber || lesson.lesson_number;
+              const sTime = lesson.startTime || lesson.start_time;
+              const eTime = lesson.endTime || lesson.end_time;
 
               return (
                 <div 
@@ -365,12 +411,11 @@ export default function Timetable() {
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs flex-shrink-0 ${
                       isMyLesson ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-500'
                     }`}>
-                      {lesson.lessonNumber}-dars
+                      {lNumber}-dars
                     </div>
 
                     <div className="space-y-1">
                       <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                        {/* Fanga mos rangli nishon */}
                         <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-black border shadow-sm ${badgeStyle}`}>
                           <BookOpen className="w-3.5 h-3.5" />
                           <span>{lesson.subject}</span>
@@ -393,7 +438,7 @@ export default function Timetable() {
                   <div className="flex items-center space-x-2 sm:space-x-3">
                     <div className="text-right text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl flex items-center space-x-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{lesson.startTime} - {lesson.endTime}</span>
+                      <span>{sTime} - {eTime}</span>
                     </div>
 
                     {isMyLesson ? (

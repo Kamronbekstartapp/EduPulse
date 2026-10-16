@@ -7,14 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "start": "node server.cjs"
+    "preview": "vite preview"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "express": "^5.3.0",
+    "firebase": "^13.0.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.55.0",
-    "pg": "^8.23.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4",

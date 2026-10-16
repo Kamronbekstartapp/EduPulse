@@ -8,6 +8,8 @@ import {
   Trash2,
   HelpCircle
 } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const formatPhoneNumber = (value) => {
   if (!value) return '+998 ';
@@ -22,28 +24,12 @@ const formatPhoneNumber = (value) => {
   return result;
 };
 
-const defaultTeachers = [
-  { id: 'TCH-1', fullName: 'Azizov Murod', phone: '+998 90 111 22 33', teacherType: 'both', assignedClass: '9-A', subject: 'Matematika' },
-  { id: 'TCH-2', fullName: 'Karimova Zilola', phone: '+998 91 222 33 44', teacherType: 'class_head', assignedClass: '9-B', subject: '' },
-  { id: 'TCH-3', fullName: 'Tursunov Dilshod', phone: '+998 93 333 44 55', teacherType: 'subject_teacher', assignedClass: '', subject: 'Fizika' }
-];
-
 export default function Teachers() {
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
 
-  const [teachersList, setTeachersList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_teachers');
-    return saved ? JSON.parse(saved) : defaultTeachers;
-  });
-
-  const [classesList, setClassesList] = useState(() => {
-    const saved = localStorage.getItem('edupulse_classes');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [accountsList, setAccountsList] = useState(() => {
-    return JSON.parse(localStorage.getItem('edupulse_teacher_accounts') || '[]');
-  });
+  const [teachersList, setTeachersList] = useState([]);
+  const [classesList, setClassesList] = useState([]);
+  const [accountsList, setAccountsList] = useState([]);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
@@ -60,25 +46,33 @@ export default function Teachers() {
     subject: ''
   });
 
-  // Tizimdagi o'zgarishlarni tekshirish va yangilab turish
+  // Firestore'dan ma'lumotlarni yuklab olish
   useEffect(() => {
-    const handleStorageChange = () => {
-      const savedAccounts = JSON.parse(localStorage.getItem('edupulse_teacher_accounts') || '[]');
-      setAccountsList(savedAccounts);
-
-      const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
-      setClassesList(savedClasses);
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    handleStorageChange();
-
-    return () => window.removeEventListener('storage', handleStorageChange);
+    loadDataFromFirebase();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('edupulse_teachers', JSON.stringify(teachersList));
-  }, [teachersList]);
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      const teachersData = teachersSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+      setTeachersList(teachersData.length > 0 ? teachersData : [
+        { id: 'TCH-1', fullName: 'Azizov Murod', phone: '+998 90 111 22 33', teacherType: 'both', assignedClass: '9-A', subject: 'Matematika' },
+        { id: 'TCH-2', fullName: 'Karimova Zilola', phone: '+998 91 222 33 44', teacherType: 'class_head', assignedClass: '9-B', subject: '' },
+        { id: 'TCH-3', fullName: 'Tursunov Dilshod', phone: '+998 93 333 44 55', teacherType: 'subject_teacher', assignedClass: '', subject: 'Fizika' }
+      ]);
+
+      // 2. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+
+      // 3. Akkauntlarni yuklash
+      const accountsSnap = await getDocs(collection(db, 'teacher_accounts'));
+      setAccountsList(accountsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+    } catch (err) {
+      console.error("Ma'lumotlarni yuklashda xatolik:", err);
+    }
+  };
 
   const isAdmin = user?.role === 'administrator';
 
@@ -88,11 +82,12 @@ export default function Teachers() {
   };
 
   // Faqat akkaunti bor va hali "O'qituvchilar" bo'limiga qo'shilmagan ustozlar ro'yxati
-  const availableAccounts = accountsList.filter(acc =>
-    !teachersList.some(t => t.fullName.trim().toLowerCase() === acc.fullName.trim().toLowerCase())
-  );
+  const availableAccounts = accountsList.filter(acc => {
+    const accName = acc.fullName || acc.full_name || '';
+    return !teachersList.some(t => (t.fullName || t.full_name || '').trim().toLowerCase() === accName.trim().toLowerCase());
+  });
 
-  const handleAddTeacher = (e) => {
+  const handleAddTeacher = async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
     setClassError('');
@@ -100,7 +95,10 @@ export default function Teachers() {
     const inputNameClean = newTeacher.fullName.trim().toLowerCase();
 
     // 1. Akkauntlar orasida bor-yo'qligini tekshirish
-    const hasAccount = accountsList.some(acc => acc.fullName && acc.fullName.trim().toLowerCase() === inputNameClean);
+    const hasAccount = accountsList.some(acc => {
+      const accName = acc.fullName || acc.full_name || '';
+      return accName && accName.trim().toLowerCase() === inputNameClean;
+    });
 
     if (!hasAccount) {
       setClassError("Ushbu ustoz tizimda mavjud emas! Iltimos, avval 'O'qituvchilar Akkauntlari' bo'limida ushbu ustoz uchun login va parol yarating.");
@@ -116,7 +114,10 @@ export default function Teachers() {
     }
 
     // 2. Ustoz allaqachon ro'yxatda bormi tekshirish
-    const existingTeacher = teachersList.find(t => t.fullName && t.fullName.trim().toLowerCase() === inputNameClean);
+    const existingTeacher = teachersList.find(t => {
+      const tName = t.fullName || t.full_name || '';
+      return tName && tName.trim().toLowerCase() === inputNameClean;
+    });
 
     if (existingTeacher) {
       const existingSubjects = (existingTeacher.subject || '').split(',').map(s => s.trim().toLowerCase());
@@ -143,15 +144,16 @@ export default function Teachers() {
     }
 
     if (needsClass) {
-      const existing = teachersList.find(t => t.assignedClass === newTeacher.assignedClass);
+      const existing = teachersList.find(t => (t.assignedClass || t.assigned_class) === newTeacher.assignedClass);
       if (existing) {
-        setClassError(`Ushbu ${newTeacher.assignedClass} sinfi allaqachon band! (${existing.fullName} rahbar)`);
+        setClassError(`Ushbu ${newTeacher.assignedClass} sinfi allaqachon band! (${existing.fullName || existing.full_name} rahbar)`);
         return;
       }
     }
 
+    const teacherId = `TCH-${Date.now().toString().slice(-4)}`;
     const teacherObj = {
-      id: `TCH-${Date.now().toString().slice(-4)}`,
+      full_name: newTeacher.fullName,
       fullName: newTeacher.fullName,
       phone: newTeacher.phone.length > 5 ? newTeacher.phone : 'Kiritilmagan',
       teacherType: newTeacher.teacherType,
@@ -159,25 +161,30 @@ export default function Teachers() {
       subject: needsSubject ? newTeacher.subject : ''
     };
 
-    setTeachersList(prev => [...prev, teacherObj]);
+    try {
+      await setDoc(doc(db, 'teachers', teacherId), teacherObj);
+      setTeachersList(prev => [...prev, { id: teacherId, ...teacherObj }]);
 
-    if (needsClass) {
-      const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
-      const updatedClasses = savedClasses.map(c =>
-        c.id === newTeacher.assignedClass
-          ? { ...c, teacher: newTeacher.fullName, teacherPhone: newTeacher.phone }
-          : c
-      );
-      localStorage.setItem('edupulse_classes', JSON.stringify(updatedClasses));
+      if (needsClass) {
+        const targetClass = classesList.find(c => c.id === newTeacher.assignedClass || c.class_id === newTeacher.assignedClass);
+        if (targetClass) {
+          const cId = targetClass.id || targetClass.class_id;
+          await setDoc(doc(db, 'classes', cId), { teacher: newTeacher.fullName, teacherPhone: newTeacher.phone }, { merge: true });
+          setClassesList(prev => prev.map(c => (c.id === cId || c.class_id === cId) ? { ...c, teacher: newTeacher.fullName, teacherPhone: newTeacher.phone } : c));
+        }
+      }
+
+      setNewTeacher({ fullName: '', phone: '+998 ', teacherType: 'class_head', assignedClass: '', subject: '' });
+      setIsAddOpen(false);
+      showToast("Yangi o'qituvchi muvaffaqiyatli qo'shildi!");
+    } catch (err) {
+      console.error("O'qituvchi qo'shishda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
     }
-
-    setNewTeacher({ fullName: '', phone: '+998 ', teacherType: 'class_head', assignedClass: '', subject: '' });
-    setIsAddOpen(false);
-    showToast("Yangi o'qituvchi muvaffaqiyatli qo'shildi!");
   };
 
   // Ikkinchi fanni tasdiqlash (HA tugmasi)
-  const handleConfirmMultiSubject = () => {
+  const handleConfirmMultiSubject = async () => {
     if (!confirmSubjectModal) return;
 
     const { existingTeacher, newSubject, newTeacherData } = confirmSubjectModal;
@@ -186,49 +193,68 @@ export default function Teachers() {
       ? `${existingTeacher.subject}, ${newSubject}`
       : newSubject;
 
-    setTeachersList(prev => prev.map(t => {
-      if (t.id === existingTeacher.id) {
-        return {
-          ...t,
-          subject: combinedSubject,
-          assignedClass: newTeacherData.assignedClass || t.assignedClass,
-          teacherType: 'both'
-        };
-      }
-      return t;
-    }));
+    const updatedPayload = {
+      subject: combinedSubject,
+      assignedClass: newTeacherData.assignedClass || existingTeacher.assignedClass || '',
+      teacherType: 'both'
+    };
 
-    setConfirmSubjectModal(null);
-    setIsAddOpen(false);
-    setNewTeacher({ fullName: '', phone: '+998 ', teacherType: 'class_head', assignedClass: '', subject: '' });
-    showToast(`${existingTeacher.fullName} ga ikkinchi fan (${newSubject}) muvaffaqiyatli biriktirildi!`);
+    try {
+      await setDoc(doc(db, 'teachers', existingTeacher.id), updatedPayload, { merge: true });
+
+      setTeachersList(prev => prev.map(t => {
+        if (t.id === existingTeacher.id) {
+          return { ...t, ...updatedPayload };
+        }
+        return t;
+      }));
+
+      setConfirmSubjectModal(null);
+      setIsAddOpen(false);
+      setNewTeacher({ fullName: '', phone: '+998 ', teacherType: 'class_head', assignedClass: '', subject: '' });
+      const tName = existingTeacher.fullName || existingTeacher.full_name;
+      showToast(`${tName} ga ikkinchi fan (${newSubject}) muvaffaqiyatli biriktirildi!`);
+    } catch (err) {
+      console.error("Ikkinchi fanni biriktirishda xatolik:", err);
+      showToast("Xatolik yuz berdi!");
+    }
   };
 
-  const handleDeleteTeacher = (id) => {
+  const handleDeleteTeacher = async (id) => {
     if (!isAdmin) return;
 
     const teacherToDelete = teachersList.find(t => t.id === id);
     if (!teacherToDelete) return;
 
-    setTeachersList(prev => prev.filter(t => t.id !== id));
+    try {
+      await deleteDoc(doc(db, 'teachers', id));
+      setTeachersList(prev => prev.filter(t => t.id !== id));
 
-    const savedClasses = JSON.parse(localStorage.getItem('edupulse_classes') || '[]');
-    const updatedClasses = savedClasses.map(c => {
-      if (
-        c.teacher === teacherToDelete.fullName ||
-        c.assignedClass === teacherToDelete.assignedClass
-      ) {
-        return {
-          ...c,
-          teacher: 'Tayinlanmagan',
-          teacherPhone: 'Kiritilmagan'
-        };
+      const assignedCls = teacherToDelete.assignedClass || teacherToDelete.assigned_class;
+      const tName = teacherToDelete.fullName || teacherToDelete.full_name;
+
+      const updatedClasses = classesList.map(c => {
+        const cTeacher = c.teacher || c.teacher_name;
+        const cId = c.id || c.class_id;
+        if (cTeacher === tName || cId === assignedCls) {
+          return { ...c, teacher: 'Tayinlanmagan', teacherPhone: 'Kiritilmagan' };
+        }
+        return c;
+      });
+
+      for (const cls of updatedClasses) {
+        const cId = cls.id || cls.class_id;
+        if (cls.teacher === 'Tayinlanmagan') {
+          await setDoc(doc(db, 'classes', cId), { teacher: 'Tayinlanmagan', teacherPhone: 'Kiritilmagan' }, { merge: true });
+        }
       }
-      return c;
-    });
-    localStorage.setItem('edupulse_classes', JSON.stringify(updatedClasses));
 
-    showToast("O'qituvchi o'chirildi va sinf 'Tayinlanmagan' holatiga o'tkazildi!");
+      setClassesList(updatedClasses);
+      showToast("O'qituvchi o'chirildi va sinf 'Tayinlanmagan' holatiga o'tkazildi!");
+    } catch (err) {
+      console.error("O'qituvchini o'chirishda xatolik:", err);
+      showToast("O'chirishda xatolik yuz berdi!");
+    }
   };
 
   return (
@@ -262,51 +288,55 @@ export default function Teachers() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {teachersList.map((tch) => (
-          <div key={tch.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
-            <div className="flex justify-between items-start pr-10">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
-                  {tch.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+        {teachersList.map((tch) => {
+          const tName = tch.fullName || tch.full_name || '';
+          const tClass = tch.assignedClass || tch.assigned_class || '';
+          return (
+            <div key={tch.id} className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-sm space-y-3 relative group">
+              <div className="flex justify-between items-start pr-10">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
+                    {tName ? tName.split(' ').map(n => n[0]).join('').slice(0, 2) : 'TC'}
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">{tName}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">{tch.id}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-sm">{tch.fullName}</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">{tch.id}</p>
+              </div>
+
+              {isAdmin && (
+                <button
+                  onClick={() => handleDeleteTeacher(tch.id)}
+                  className="absolute top-4 right-4 p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
+                  title="O'chirish"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+
+              <div className="text-xs space-y-1.5 text-slate-600 pt-2 border-t border-slate-100">
+                <p className="flex items-center space-x-2">
+                  <Phone className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Tel: <strong>{tch.phone}</strong></span>
+                </p>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {(tch.teacherType === 'class_head' || tch.teacherType === 'both') && tClass && (
+                    <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-lg">
+                      Sinf rahbari: {tClass}
+                    </span>
+                  )}
+                  {(tch.teacherType === 'subject_teacher' || tch.teacherType === 'both') && tch.subject && (
+                    <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-lg">
+                      Fan: {tch.subject}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-
-            {isAdmin && (
-              <button
-                onClick={() => handleDeleteTeacher(tch.id)}
-                className="absolute top-4 right-4 p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition"
-                title="O'chirish"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-
-            <div className="text-xs space-y-1.5 text-slate-600 pt-2 border-t border-slate-100">
-              <p className="flex items-center space-x-2">
-                <Phone className="w-3.5 h-3.5 text-blue-500" />
-                <span>Tel: <strong>{tch.phone}</strong></span>
-              </p>
-
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {(tch.teacherType === 'class_head' || tch.teacherType === 'both') && tch.assignedClass && (
-                  <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-lg">
-                    Sinf rahbari: {tch.assignedClass}
-                  </span>
-                )}
-                {(tch.teacherType === 'subject_teacher' || tch.teacherType === 'both') && tch.subject && (
-                  <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-lg">
-                    Fan: {tch.subject}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {isAdmin && isAddOpen && (
@@ -341,9 +371,12 @@ export default function Teachers() {
                 />
 
                 <datalist id="teacher-accounts-list">
-                  {availableAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.fullName} />
-                  ))}
+                  {availableAccounts.map((acc) => {
+                    const accName = acc.fullName || acc.full_name;
+                    return (
+                      <option key={acc.id} value={accName} />
+                    );
+                  })}
                 </datalist>
 
                 <p className="text-[10px] text-slate-400 mt-1">
@@ -390,10 +423,11 @@ export default function Teachers() {
                   >
                     <option value="">Sinfni tanlang...</option>
                     {classesList.map(c => {
-                      const isTaken = teachersList.some(t => t.assignedClass === c.id);
+                      const cId = c.id || c.class_id;
+                      const isTaken = teachersList.some(t => (t.assignedClass || t.assigned_class) === cId);
                       return (
-                        <option key={c.id} value={c.id}>
-                          {c.name} {isTaken ? '(Banda)' : '(Bosh)'}
+                        <option key={cId} value={cId}>
+                          {c.name || cId} {isTaken ? '(Banda)' : '(Bosh)'}
                         </option>
                       );
                     })}
@@ -433,7 +467,7 @@ export default function Teachers() {
             <div className="space-y-1">
               <h3 className="text-base font-black text-slate-900">Ikkinchi fan biriktirilsinmi?</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                <strong className="text-blue-600">{confirmSubjectModal.existingTeacher.fullName}</strong> allaqachon{' '}
+                <strong className="text-blue-600">{confirmSubjectModal.existingTeacher.fullName || confirmSubjectModal.existingTeacher.full_name}</strong> allaqachon{' '}
                 <strong className="text-slate-900">"{confirmSubjectModal.existingTeacher.subject || 'Sinf rahbari'}"</strong> sifatida ro'yxatda bor. Unga ikkinchi fan sifatida{' '}
                 <strong className="text-emerald-600">"{confirmSubjectModal.newSubject}"</strong> fanini ham biriktirishni tasdiqlaysizmi?
               </p>

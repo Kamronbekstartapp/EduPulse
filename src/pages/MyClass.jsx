@@ -1,13 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookMarked, Calendar, BookOpen, ChevronRight, User, Sparkles, Clock, AlertCircle } from 'lucide-react';
+import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function MyClass() {
   const navigate = useNavigate();
   const [user] = useState(() => JSON.parse(localStorage.getItem('edupulse_user') || '{}'));
-  const [classesList] = useState(() => JSON.parse(localStorage.getItem('edupulse_classes') || '[]'));
-  const [teachersList] = useState(() => JSON.parse(localStorage.getItem('edupulse_teachers') || '[]'));
-  const [timetable] = useState(() => JSON.parse(localStorage.getItem('edupulse_timetable') || '[]'));
+  
+  const [classesList, setClassesList] = useState([]);
+  const [teachersList, setTeachersList] = useState([]);
+  const [timetable, setTimetable] = useState([]);
+
+  // Firebase'dan ma'lumotlarni yuklab olish
+  useEffect(() => {
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      // 1. Sinflarni yuklash
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 2. O'qituvchilarni yuklash
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // 3. Dars jadvalini yuklash
+      const timetableSnap = await getDocs(collection(db, 'timetable'));
+      setTimetable(timetableSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err) {
+      console.error("Firebase'dan ma'lumotlarni olishda xatolik:", err);
+    }
+  };
 
   const isAdmin = user?.role === 'administrator';
 
@@ -17,18 +43,21 @@ export default function MyClass() {
   );
 
   const assignedClass = classesList.find(c => {
-    if (teacherObj?.assigned_class || teacherObj?.assignedClass) {
-      return c.id === (teacherObj.assigned_class || teacherObj.assignedClass);
+    const assigned = teacherObj?.assigned_class || teacherObj?.assignedClass;
+    const cId = c.id || c.class_id;
+    if (assigned) {
+      return cId === assigned;
     }
-    return (c.teacher || '').toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
+    const cTeacher = c.teacher || c.teacher_name || '';
+    return cTeacher.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
   });
 
   // Admin uchun tanlangan sinf (boshida birinchi sinf tanlanadi)
-  const [selectedAdminClassId, setSelectedAdminClassId] = useState(classesList[0]?.id || '');
+  const [selectedAdminClassId, setSelectedAdminClassId] = useState('');
 
   // Ekranda ko'rsatiladigan sinf obyekti
   const activeClassObj = isAdmin 
-    ? classesList.find(c => c.id === selectedAdminClassId) || classesList[0]
+    ? classesList.find(c => (c.id || c.class_id) === (selectedAdminClassId || classesList[0]?.id || classesList[0]?.class_id)) || classesList[0]
     : assignedClass || classesList[0];
 
   // Bugungi sana va hafta kunlarini hisoblash
@@ -69,7 +98,7 @@ export default function MyClass() {
   const weekDays = getWeekDates();
   const [selectedDay, setSelectedDay] = useState(() => weekDays.find(d => d.isToday) || weekDays[0]);
 
-  if (!isAdmin && !assignedClass) {
+  if (!isAdmin && !assignedClass && classesList.length > 0) {
     return (
       <div className="p-8 text-center space-y-4 max-w-md mx-auto my-12 bg-white rounded-3xl border border-slate-200/80 shadow-lg">
         <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
@@ -80,8 +109,13 @@ export default function MyClass() {
   }
 
   // Tanlangan kun va faol sinf uchun dars jadvali
+  const activeClassId = activeClassObj?.id || activeClassObj?.class_id;
   const dayLessons = activeClassObj 
-    ? timetable.filter(item => item.day === selectedDay.id && item.classId === activeClassObj.id).sort((a, b) => a.lessonNumber - b.lessonNumber)
+    ? timetable.filter(item => {
+        const itemDay = item.day || item.day_of_week;
+        const itemClassId = item.classId || item.class_id;
+        return itemDay === selectedDay.id && String(itemClassId) === String(activeClassId);
+      }).sort((a, b) => (a.lessonNumber || a.lesson_number || 0) - (b.lessonNumber || b.lesson_number || 0))
     : [];
 
   return (
@@ -91,12 +125,12 @@ export default function MyClass() {
         <div>
           <div className="flex items-center space-x-2">
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {isAdmin ? "Sinflar Nazorati (Admin)" : `Mening Sinfim — ${activeClassObj?.name}`}
+              {isAdmin ? "Sinflar Nazorati (Admin)" : `Mening Sinfim — ${activeClassObj?.name || activeClassId}`}
             </h2>
             <Sparkles className="w-5 h-5 text-amber-500" />
           </div>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-            {isAdmin ? "Barcha sinflarning dars jadvali va kitob/daftar natijalari" : `Sinf rahbari: ${activeClassObj?.teacher || user?.fullName}`}
+            {isAdmin ? "Barcha sinflarning dars jadvali va kitob/daftar natijalari" : `Sinf rahbari: ${activeClassObj?.teacher || activeClassObj?.teacher_name || user?.fullName}`}
           </p>
         </div>
 
@@ -105,13 +139,16 @@ export default function MyClass() {
           <div className="flex items-center space-x-2 bg-white p-2 rounded-2xl border border-slate-200/80 shadow-sm">
             <span className="text-xs font-black text-slate-500 uppercase px-2">Sinfni tanlang:</span>
             <select
-              value={selectedAdminClassId || activeClassObj?.id}
+              value={selectedAdminClassId || activeClassId}
               onChange={(e) => setSelectedAdminClassId(e.target.value)}
               className="p-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold outline-none cursor-pointer"
             >
-              {classesList.map(c => (
-                <option key={c.id} value={c.id}>{c.name} ({c.shift || '1-smena'})</option>
-              ))}
+              {classesList.map(c => {
+                const cId = c.id || c.class_id;
+                return (
+                  <option key={cId} value={cId}>{c.name || cId} ({c.shift || '1-smena'})</option>
+                );
+              })}
             </select>
           </div>
         )}
@@ -158,7 +195,7 @@ export default function MyClass() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
           <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
-            {activeClassObj?.name} — {selectedDay.name} ({selectedDay.formattedDate}) Darslari
+            {activeClassObj?.name || activeClassId} — {selectedDay.name} ({selectedDay.formattedDate}) Darslari
           </h3>
           <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-xl">
             Natijalarni ko'rish uchun fan ustiga bosing
@@ -167,52 +204,59 @@ export default function MyClass() {
 
         <div className="divide-y divide-slate-100">
           {dayLessons.length > 0 ? (
-            dayLessons.map((lesson) => (
-              <div
-                key={lesson.id}
-                onClick={() => navigate('/my-class/subject-status', {
-                  state: {
-                    classId: activeClassObj.id,
-                    className: activeClassObj.name,
-                    subject: lesson.subject,
-                    teacherName: lesson.teacherName,
-                    dateStr: selectedDay.dateStr,
-                    dayName: selectedDay.name,
-                    formattedDate: selectedDay.formattedDate
-                  }
-                })}
-                className="p-4 flex items-center justify-between gap-4 hover:bg-blue-50/50 cursor-pointer transition group"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition flex items-center justify-center font-black text-xs flex-shrink-0">
-                    {lesson.lessonNumber}-dars
+            dayLessons.map((lesson) => {
+              const lNumber = lesson.lessonNumber || lesson.lesson_number;
+              const tName = lesson.teacherName || lesson.teacher_name;
+              const sTime = lesson.startTime || lesson.start_time;
+              const eTime = lesson.endTime || lesson.end_time;
+
+              return (
+                <div
+                  key={lesson.id || lesson.schedule_id}
+                  onClick={() => navigate('/my-class/subject-status', {
+                    state: {
+                      classId: activeClassId,
+                      className: activeClassObj?.name || activeClassId,
+                      subject: lesson.subject,
+                      teacherName: tName,
+                      dateStr: selectedDay.dateStr,
+                      dayName: selectedDay.name,
+                      formattedDate: selectedDay.formattedDate
+                    }
+                  })}
+                  className="p-4 flex items-center justify-between gap-4 hover:bg-blue-50/50 cursor-pointer transition group"
+                >
+                  <div className="flex items-center space-x-4">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition flex items-center justify-center font-black text-xs flex-shrink-0">
+                      {lNumber}-dars
+                    </div>
+
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
+                        <BookOpen className="w-4 h-4 text-blue-600" />
+                        <span>{lesson.subject}</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 flex items-center space-x-1 font-medium">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Fan o'qituvchisi: <strong className="text-slate-800 font-bold">{tName}</strong></span>
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
-                      <BookOpen className="w-4 h-4 text-blue-600" />
-                      <span>{lesson.subject}</span>
-                    </h4>
-                    <p className="text-xs text-slate-500 flex items-center space-x-1 font-medium">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Fan o'qituvchisi: <strong className="text-slate-800 font-bold">{lesson.teacherName}</strong></span>
-                    </p>
+                  <div className="flex items-center space-x-3">
+                    <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl flex items-center space-x-1">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{sTime} - {eTime}</span>
+                    </div>
+
+                    <div className="flex items-center space-x-1 text-blue-600 font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
+                      <span>Natijalar</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center space-x-3">
-                  <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl flex items-center space-x-1">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{lesson.startTime} - {lesson.endTime}</span>
-                  </div>
-
-                  <div className="flex items-center space-x-1 text-blue-600 font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">
-                    <span>Natijalar</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </div>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-center py-12 text-xs text-slate-400 font-bold">
               Ushbu sinfga ushbu kunga dars jadvali kiritilmagan.
