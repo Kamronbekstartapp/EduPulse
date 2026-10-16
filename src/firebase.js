@@ -8,7 +8,6 @@ const firebaseConfig = {
   storageBucket: "edupulse-a2c89.firebasestorage.app",
   messagingSenderId: "127030288763",
   appId: "1:127030288763:web:364fd4b20e245b6f00ddde",
-  measurementId: "G-QGDK43JP53"
 };
 
 const app = initializeApp(firebaseConfig);
