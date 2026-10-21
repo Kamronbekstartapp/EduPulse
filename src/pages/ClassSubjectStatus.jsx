@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, X, Sparkles, UserCheck, AlertTriangle } from 'lucide-react';
-import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { ArrowLeft, Check, X, Sparkles, UserCheck, AlertTriangle, UserX } from 'lucide-react';
+import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
 export default function ClassSubjectStatus() {
@@ -24,7 +24,7 @@ export default function ClassSubjectStatus() {
       const studentsSnap = await getDocs(collection(db, 'students'));
       setStudentsList(studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-      // 2. Kitob-daftar yozuvlarini Firestore'dan olish
+      // 2. Kitob-daftar va Davomat yozuvlarini Firestore'dan olish
       const recordsSnap = await getDocs(collection(db, 'book_notebook_records'));
       const recordsObj = {};
       recordsSnap.docs.forEach(docSnap => {
@@ -48,16 +48,16 @@ export default function ClassSubjectStatus() {
     );
   }
 
-  // 1. O'quvchilarni barcha ehtimoliy maydonlar bo'yicha filter qilish
+  // 1. O'quvchilarni filtrlash
   const classStudents = studentsList.filter(s => {
-    const sGrade = String(s.grade || s.classId || s.className || '').trim().toLowerCase();
+    const sGrade = String(s.grade || s.classId || s.className || s.class_id || '').trim().toLowerCase();
     const targetId = String(classId || '').trim().toLowerCase();
     const targetName = String(className || '').trim().toLowerCase();
     
     return (targetId && sGrade === targetId) || (targetName && sGrade === targetName);
   });
 
-  // 2. Firestore dagi barcha kalitlarni tekshirish (Variantlar)
+  // 2. Firestore dagi mos keluvchi kalitni izlash
   const allSavedKeys = Object.keys(bookRecords);
   
   const matchedKey = allSavedKeys.find(key => {
@@ -103,7 +103,7 @@ export default function ClassSubjectStatus() {
       {!savedRecord ? (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl text-xs font-bold flex items-center space-x-2">
           <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-600" />
-          <span>Fan o'qituvchisi ushbu dars uchun hali kitob va daftar nazoratini belgilab saqlamagan.</span>
+          <span>Fan o'qituvchisi ushbu dars uchun hali davomat hamda kitob va daftar nazoratini belgilab saqlamagan.</span>
         </div>
       ) : (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-2xl text-xs font-bold flex items-center justify-between">
@@ -115,8 +115,9 @@ export default function ClassSubjectStatus() {
       {/* JADVAL RO'YXATI */}
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between text-xs font-black text-slate-700">
-          <div className="w-1/2 sm:w-2/3">O'QUVCHI ISMI va FAMILIYASI</div>
-          <div className="w-1/2 sm:w-1/3 grid grid-cols-2 text-center">
+          <div className="w-1/2 sm:w-1/2">O'QUVCHI ISMI va FAMILIYASI</div>
+          <div className="w-1/2 sm:w-1/2 grid grid-cols-3 text-center">
+            <span>DAVOMAT</span>
             <span>KITOB</span>
             <span>DAFTAR</span>
           </div>
@@ -134,12 +135,16 @@ export default function ClassSubjectStatus() {
                 (s.name && stName && s.name.toLowerCase().trim() === stName.toLowerCase().trim())
               );
 
+              // Standart qiymatlar
+              const isPresent = studentStatus ? (studentStatus.isPresent !== undefined ? Boolean(studentStatus.isPresent) : true) : true;
               const hasBook = studentStatus ? Boolean(studentStatus.booksReady) : true;
               const hasNotebook = studentStatus ? Boolean(studentStatus.notebooksReady) : true;
 
               return (
-                <div key={stId || idx} className="p-4 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition">
-                  <div className="w-1/2 sm:w-2/3 flex items-center space-x-3">
+                <div key={stId || idx} className={`p-4 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition ${
+                  !isPresent ? 'bg-rose-50/30' : ''
+                }`}>
+                  <div className="w-1/2 sm:w-1/2 flex items-center space-x-3">
                     <span className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
                       {idx + 1}
                     </span>
@@ -149,9 +154,27 @@ export default function ClassSubjectStatus() {
                     </div>
                   </div>
 
-                  <div className="w-1/2 sm:w-1/3 grid grid-cols-2 text-center">
+                  <div className="w-1/2 sm:w-1/2 grid grid-cols-3 text-center items-center">
+                    {/* 1. DAVOMAT USTUNI */}
                     <div className="flex justify-center">
-                      {hasBook ? (
+                      {isPresent ? (
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-[11px] font-extrabold">
+                          <UserCheck className="w-3.5 h-3.5" />
+                          <span>Bor</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-rose-100 text-rose-700 text-[11px] font-extrabold">
+                          <UserX className="w-3.5 h-3.5" />
+                          <span>Yo'q</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 2. KITOB USTUNI */}
+                    <div className="flex justify-center">
+                      {!isPresent ? (
+                        <span className="text-slate-300 font-bold">-</span>
+                      ) : hasBook ? (
                         <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 font-bold">
                           <Check className="w-5 h-5 stroke-[3]" />
                         </span>
@@ -162,8 +185,11 @@ export default function ClassSubjectStatus() {
                       )}
                     </div>
 
+                    {/* 3. DAFTAR USTUNI */}
                     <div className="flex justify-center">
-                      {hasNotebook ? (
+                      {!isPresent ? (
+                        <span className="text-slate-300 font-bold">-</span>
+                      ) : hasNotebook ? (
                         <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 font-bold">
                           <Check className="w-5 h-5 stroke-[3]" />
                         </span>

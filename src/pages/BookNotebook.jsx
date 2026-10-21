@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles, Users } from 'lucide-react';
-import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
-import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
+import { CheckCircle2, Save, Lock, ArrowLeft, AlertCircle, Calendar, Sparkles, Users, UserCheck, UserX } from 'lucide-react';
+import { db } from '../firebase';
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
 export default function BookNotebook() {
   const location = useLocation();
@@ -24,7 +24,7 @@ export default function BookNotebook() {
     loadDataFromFirebase();
   }, []);
 
-  const loadDataFromFirebase = async () => {
+const loadDataFromFirebase = async () => {
     try {
       // 1. O'quvchilarni Firestore'dan olish
       const studentsSnap = await getDocs(collection(db, 'students'));
@@ -39,18 +39,18 @@ export default function BookNotebook() {
       });
       setRecords(recordsObj);
 
-      // 3. Dars jadvalini localStorage'dan (yoki Firestore'dan) olish
-      const savedTimetable = JSON.parse(localStorage.getItem('edupulse_timetable') || '[]');
-      setTimetable(savedTimetable);
+      // 3. Dars jadvalini FIRESTORE'dan olish (localStorage o'rniga)
+      const timetableSnap = await getDocs(collection(db, 'timetable'));
+      setTimetable(timetableSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
     } catch (err) {
       console.error("Firebase'dan ma'lumotlarni olishda xatolik:", err);
     }
   };
 
-  // Joriy haftaning kunlari va sanalarini hisoblash (Dushanbadan Shanbagacha)
+  // Joriy haftaning kunlari va sanalarini hisoblash
   const getWeekDates = () => {
     const current = new Date(today);
-    const dayOfWeek = current.getDay(); // 0: Yakshanba, 1: Dushanba ...
+    const dayOfWeek = current.getDay();
     const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     
     const monday = new Date(current);
@@ -86,22 +86,23 @@ export default function BookNotebook() {
   const [selectedDay, setSelectedDay] = useState(() => weekDays.find(d => d.isToday) || weekDays[0]);
 
   // Dars jadvalidan ushbu sinf va fan qaysi kunlarga qo'yilganini aniqlash
-  const scheduledDayIds = timetable.filter(item => 
-    String(item.classId || item.class_id) === String(classId) && 
-    item.subject?.toLowerCase().trim() === subject?.toLowerCase().trim()
-  ).map(item => item.day || item.day_of_week);
+  const scheduledDayIds = timetable.filter(item => {
+    const itemClassId = String(item.classId || item.class_id || '').trim();
+    const targetClassId = String(classId || '').trim();
+    const itemSub = (item.subject || '').toLowerCase().trim();
+    const targetSub = (subject || '').toLowerCase().trim();
 
-  // Tanlangan kunda ushbu fan dars jadvalida bormi?
+    return itemClassId === targetClassId && (itemSub.includes(targetSub) || targetSub.includes(itemSub));
+  }).map(item => item.day || item.day_of_week);
+
   const hasLessonOnSelectedDay = scheduledDayIds.includes(selectedDay.id);
-
   const recordKey = `${classId}_${subject}_${selectedDay.dateStr}`;
 
   const [toastMsg, setToastMsg] = useState(null);
-  const isAdmin = user?.role === 'administrator';
+  const isAdmin = user?.role === 'administrator' || user?.role === 'admin';
 
   const isLocked = !isAdmin && (selectedDay.isPast || selectedDay.isFuture || !!records[recordKey]?.locked);
 
-  // Faqat shu sinf o'quvchilarini filtrlash
   const classStudents = studentsList.filter(s => 
     String(s.grade) === String(classId) || 
     String(s.class_id) === String(classId)
@@ -118,6 +119,7 @@ export default function BookNotebook() {
       const freshStates = classStudents.map(s => ({
         id: s.student_id || s.id,
         fullName: s.full_name || s.fullName || s.name,
+        isPresent: true, // Standart: Darsda bor
         booksReady: true,
         notebooksReady: true
       }));
@@ -130,15 +132,43 @@ export default function BookNotebook() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
+  // Davomat (Darsda bor/yo'q) almashtirish
+  const handleToggleAttendance = (studentId) => {
+    if (isLocked || !hasLessonOnSelectedDay) return;
+
+    setStudentStates(prev =>
+      prev.map(s => {
+        if (String(s.id) === String(studentId)) {
+          const nextPresent = !s.isPresent;
+          return {
+            ...s,
+            isPresent: nextPresent,
+            // Agar darsda yo'q deb belgilansa, kitob-daftari ham yo'q bo'ladi
+            booksReady: nextPresent ? s.booksReady : false,
+            notebooksReady: nextPresent ? s.notebooksReady : false
+          };
+        }
+        return s;
+      })
+    );
+  };
+
+  // Kitob va Daftar tayyorgarligini almashtirish
   const handleToggle = (studentId, field) => {
     if (isLocked || !hasLessonOnSelectedDay) return;
 
     setStudentStates(prev =>
-      prev.map(s => String(s.id) === String(studentId) ? { ...s, [field]: !s[field] } : s)
+      prev.map(s => {
+        // Faqat darsda bor o'quvchining kitob/daftarlarini o'zgartirish mumkin
+        if (String(s.id) === String(studentId) && s.isPresent) {
+          return { ...s, [field]: !s[field] };
+        }
+        return s;
+      })
     );
   };
 
-  // 💾 Natijani Firebase Firestore'ga saqlash
+  // Natijani Firebase Firestore'ga saqlash
   const handleSaveDay = async () => {
     if (isLocked || !hasLessonOnSelectedDay) return;
 
@@ -155,7 +185,7 @@ export default function BookNotebook() {
       });
 
       setRecords(prev => ({ ...prev, [recordKey]: payloadData }));
-      showToast(`${selectedDay.name} kunlik natijalar bazaga saqlandi!`);
+      showToast(`${selectedDay.name} kunlik davomat va natijalar bazaga saqlandi!`);
     } catch (err) {
       console.error("Firebase'ga saqlashda xatolik:", err);
       alert("Ma'lumotlarni saqlashda xatolik yuz berdi!");
@@ -174,6 +204,11 @@ export default function BookNotebook() {
       </div>
     );
   }
+
+  // Statistikani hisoblash
+  const totalStudents = studentStates.length;
+  const presentCount = studentStates.filter(s => s.isPresent).length;
+  const absentCount = totalStudents - presentCount;
 
   return (
     <div className="px-4 py-6 sm:px-8 max-w-7xl mx-auto space-y-6">
@@ -211,7 +246,7 @@ export default function BookNotebook() {
             className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition shadow-lg shadow-emerald-500/20 active:scale-95 self-start sm:self-auto"
           >
             <Save className="w-4 h-4" />
-            <span>Kunlik Natijani Saqlash (DB)</span>
+            <span>Natijalarni Saqlash (DB)</span>
           </button>
         )}
       </div>
@@ -247,7 +282,6 @@ export default function BookNotebook() {
                   {day.formattedDate}
                 </p>
 
-                {/* Shu kuni dars bo'lsa ko'rsatkich nuqta */}
                 {isScheduled && (
                   <span className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-blue-600'}`} />
                 )}
@@ -257,7 +291,7 @@ export default function BookNotebook() {
         </div>
       </div>
 
-      {/* Qulflanganlik haqida ogohlantirish (Dars bor kun uchun) */}
+      {/* Qulflanganlik haqida ogohlantirish */}
       {isLocked && hasLessonOnSelectedDay && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl flex items-center space-x-3 text-xs font-bold">
           <Lock className="w-5 h-5 flex-shrink-0 text-amber-600" />
@@ -271,33 +305,67 @@ export default function BookNotebook() {
         </div>
       )}
 
-      {/* O'QUVCHILAR RO'YXATI YOKI DARSI YO'Q KUN OGOHLANTIRISHI */}
+      {/* O'QUVCHILAR DAVOMATI VA JURNAL RO'YXATI */}
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-center gap-2">
           <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
-            {selectedDay.name} ({selectedDay.formattedDate}) — O'quvchilar Tayyorgarligi
+            {selectedDay.name} ({selectedDay.formattedDate}) — Davomat va Kitob/Daftar Tekshiruvi
           </h3>
-          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-xl">
-            Jami: {hasLessonOnSelectedDay ? studentStates.length : 0} nafar
-          </span>
+          
+          {hasLessonOnSelectedDay && (
+            <div className="flex items-center space-x-2 text-xs font-bold">
+              <span className="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-xl">
+                Bor: {presentCount}
+              </span>
+              <span className="bg-rose-100 text-rose-800 px-2.5 py-1 rounded-xl">
+                Yo'q: {absentCount}
+              </span>
+            </div>
+          )}
         </div>
 
         {hasLessonOnSelectedDay ? (
           <div className="divide-y divide-slate-100">
             {studentStates.length > 0 ? (
               studentStates.map((student) => (
-                <div key={student.id} className="p-4 flex items-center justify-between gap-3">
+                <div key={student.id} className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${
+                  !student.isPresent ? 'bg-rose-50/30' : ''
+                }`}>
                   <div>
-                    <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{student.fullName}</h4>
+                    <h4 className="font-bold text-slate-800 text-xs sm:text-sm flex items-center space-x-2">
+                      <span>{student.fullName}</span>
+                      {!student.isPresent && (
+                        <span className="bg-rose-100 text-rose-700 text-[10px] px-2 py-0.5 rounded-md font-bold">
+                          Darsda yo'q
+                        </span>
+                      )}
+                    </h4>
                     <p className="text-[10px] text-slate-400">ID: {student.id}</p>
                   </div>
 
-                  <div className="flex items-center space-x-2 text-xs">
+                  <div className="flex items-center space-x-2 text-xs flex-wrap gap-y-2">
+                    {/* 1. DAVOMAT TUGMASI (Darsda Bor / Yo'q) */}
                     <button
                       disabled={isLocked}
+                      onClick={() => handleToggleAttendance(student.id)}
+                      className={`px-3 py-2 rounded-xl font-bold text-[11px] transition flex items-center space-x-1.5 ${
+                        student.isPresent 
+                          ? 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700' 
+                          : 'bg-rose-600 text-white shadow-sm hover:bg-rose-700'
+                      } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                    >
+                      {student.isPresent ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                      <span>{student.isPresent ? 'Darsda: Bor' : "Darsda: Yo'q"}</span>
+                    </button>
+
+                    {/* 2. KITOB TUGMASI */}
+                    <button
+                      disabled={isLocked || !student.isPresent}
                       onClick={() => handleToggle(student.id, 'booksReady')}
                       className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                        student.booksReady 
+                        !student.isPresent
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                          : student.booksReady 
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                           : 'bg-rose-50 text-rose-700 border border-rose-200'
                       } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
@@ -305,11 +373,14 @@ export default function BookNotebook() {
                       Kitob: {student.booksReady ? 'Bor' : "Yo'q"}
                     </button>
 
+                    {/* 3. DAFTAR TUGMASI */}
                     <button
-                      disabled={isLocked}
+                      disabled={isLocked || !student.isPresent}
                       onClick={() => handleToggle(student.id, 'notebooksReady')}
                       className={`px-3 py-2 rounded-xl font-bold text-[11px] transition ${
-                        student.notebooksReady 
+                        !student.isPresent
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                          : student.notebooksReady 
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                           : 'bg-rose-50 text-rose-700 border border-rose-200'
                       } ${isLocked ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}

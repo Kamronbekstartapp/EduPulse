@@ -12,9 +12,10 @@ import {
   Sparkles, 
   X, 
   ChevronRight,
-  Pencil
+  Pencil,
+  Users
 } from 'lucide-react';
-import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { db } from '../firebase';
 import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const DAYS = [
@@ -26,7 +27,6 @@ const DAYS = [
   { id: 'sat', name: 'Shanba' }
 ];
 
-// Fanlar uchun rangli dizaynlar palitrasi
 const getSubjectBadgeStyle = (subjectName) => {
   if (!subjectName) return 'bg-slate-100 text-slate-700 border-slate-200';
   const sub = subjectName.toLowerCase().trim();
@@ -56,43 +56,41 @@ export default function Timetable() {
   const [classesList, setClassesList] = useState([]);
   const [teachersList, setTeachersList] = useState([]);
   const [timetable, setTimetable] = useState([]);
+  const [studentsList, setStudentsList] = useState([]); // O'QUVCHILAR RO'YXATI QO'SHILDI
 
-  const [activeShift, setActiveShift] = useState(1); // 1 yoki 2
+  const [activeShift, setActiveShift] = useState(1);
   const [activeDay, setActiveDay] = useState('mon');
+  const [selectedClassId, setSelectedClassId] = useState('');
 
-  // Firestore'dan ma'lumotlarni yuklab olish
+  // Firebase'dan ma'lumotlarni yuklab olish
   useEffect(() => {
     loadDataFromFirebase();
   }, []);
 
   const loadDataFromFirebase = async () => {
     try {
-      // 1. Sinflarni yuklash
       const classesSnap = await getDocs(collection(db, 'classes'));
       setClassesList(classesSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
 
-      // 2. O'qituvchilarni yuklash
       const teachersSnap = await getDocs(collection(db, 'teachers'));
       setTeachersList(teachersSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
 
-      // 3. Dars jadvalini yuklash
       const timetableSnap = await getDocs(collection(db, 'timetable'));
       setTimetable(timetableSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+
+      // O'quvchilarni Firestore'dan yuklab olish
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      setStudentsList(studentsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
     } catch (err) {
       console.error("Ma'lumotlarni yuklashda xatolik:", err);
     }
   };
 
-  // Tanlangan smenaga mos sinflarni saralash
   const currentShiftClasses = classesList.filter(c => {
     const shiftStr = c.shift || '1-smena';
     return activeShift === 1 ? shiftStr.includes('1') : shiftStr.includes('2');
   });
 
-  // Tanlangan sinf ID si
-  const [selectedClassId, setSelectedClassId] = useState('');
-
-  // ActiveShift yoki Sinflar ro'yxati o'zgarganda selectedClassId ni moslash
   useEffect(() => {
     if (currentShiftClasses.length > 0) {
       const existsInCurrentShift = currentShiftClasses.some(c => (c.id || c.class_id) === selectedClassId);
@@ -105,7 +103,7 @@ export default function Timetable() {
   }, [activeShift, classesList]);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingLesson, setEditingLesson] = useState(null); // Tahrirlanayotgan dars
+  const [editingLesson, setEditingLesson] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -116,7 +114,7 @@ export default function Timetable() {
     endTime: '09:15'
   });
 
-  const isAdmin = user?.role === 'administrator';
+  const isAdmin = user?.role === 'administrator' || user?.role === 'admin';
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -275,6 +273,11 @@ export default function Timetable() {
     .filter(item => Number(item.shift || 1) === Number(activeShift) && item.day === activeDay && String(item.classId) === String(selectedClassId))
     .sort((a, b) => Number(a.lessonNumber || a.lesson_number || 0) - Number(b.lessonNumber || b.lesson_number || 0));
 
+  // Tanlangan sinf o'quvchilari sonini hisoblash
+  const currentClassStudents = studentsList.filter(s => 
+    String(s.grade || s.class_id || s.classId) === String(selectedClassId)
+  );
+
   return (
     <div className="px-4 py-6 sm:px-8 max-w-7xl mx-auto space-y-6">
       {toastMsg && (
@@ -291,7 +294,7 @@ export default function Timetable() {
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Haftalik Dars Jadvali</h2>
             <Sparkles className="w-5 h-5 text-amber-500" />
           </div>
-          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">Kitob va daftarni tekshirish uchun o'z darsingiz ustiga bosing</p>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">Davomat hamda kitob va daftarni tekshirish uchun o'z darsingiz ustiga bosing</p>
         </div>
 
         <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
@@ -379,13 +382,19 @@ export default function Timetable() {
 
       {/* Darslar Jadvali */}
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center flex-wrap gap-2">
           <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
             {DAYS.find(d => d.id === activeDay)?.name} kunlik darslar
           </h3>
-          <span className={`text-[11px] font-bold px-3 py-1 rounded-xl ${activeShift === 1 ? 'text-blue-600 bg-blue-50' : 'text-indigo-600 bg-indigo-50'}`}>
-            {activeShift}-Smena
-          </span>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-xl flex items-center space-x-1">
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span>Sinfda: <strong>{currentClassStudents.length} ta o'quvchi</strong></span>
+            </span>
+            <span className={`text-[11px] font-bold px-3 py-1 rounded-xl ${activeShift === 1 ? 'text-blue-600 bg-blue-50' : 'text-indigo-600 bg-indigo-50'}`}>
+              {activeShift}-Smena
+            </span>
+          </div>
         </div>
 
         <div className="divide-y divide-slate-100">

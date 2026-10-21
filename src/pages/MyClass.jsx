@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookMarked, Calendar, BookOpen, ChevronRight, User, Sparkles, Clock, AlertCircle } from 'lucide-react';
-import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
+import { Calendar, BookOpen, ChevronRight, User, Sparkles, Clock, AlertCircle, Users, Eye } from 'lucide-react';
+import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
 export default function MyClass() {
@@ -11,54 +11,7 @@ export default function MyClass() {
   const [classesList, setClassesList] = useState([]);
   const [teachersList, setTeachersList] = useState([]);
   const [timetable, setTimetable] = useState([]);
-
-  // Firebase'dan ma'lumotlarni yuklab olish
-  useEffect(() => {
-    loadDataFromFirebase();
-  }, []);
-
-  const loadDataFromFirebase = async () => {
-    try {
-      // 1. Sinflarni yuklash
-      const classesSnap = await getDocs(collection(db, 'classes'));
-      setClassesList(classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-      // 2. O'qituvchilarni yuklash
-      const teachersSnap = await getDocs(collection(db, 'teachers'));
-      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-      // 3. Dars jadvalini yuklash
-      const timetableSnap = await getDocs(collection(db, 'timetable'));
-      setTimetable(timetableSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (err) {
-      console.error("Firebase'dan ma'lumotlarni olishda xatolik:", err);
-    }
-  };
-
-  const isAdmin = user?.role === 'administrator';
-
-  // Sinf rahbariga biriktirilgan sinfni izlash
-  const teacherObj = teachersList.find(t => 
-    (t.full_name || t.fullName || t.name || '').toLowerCase().trim() === (user?.fullName || user?.username || '').toLowerCase().trim()
-  );
-
-  const assignedClass = classesList.find(c => {
-    const assigned = teacherObj?.assigned_class || teacherObj?.assignedClass;
-    const cId = c.id || c.class_id;
-    if (assigned) {
-      return cId === assigned;
-    }
-    const cTeacher = c.teacher || c.teacher_name || '';
-    return cTeacher.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
-  });
-
-  // Admin uchun tanlangan sinf (boshida birinchi sinf tanlanadi)
   const [selectedAdminClassId, setSelectedAdminClassId] = useState('');
-
-  // Ekranda ko'rsatiladigan sinf obyekti
-  const activeClassObj = isAdmin 
-    ? classesList.find(c => (c.id || c.class_id) === (selectedAdminClassId || classesList[0]?.id || classesList[0]?.class_id)) || classesList[0]
-    : assignedClass || classesList[0];
 
   // Bugungi sana va hafta kunlarini hisoblash
   const today = new Date();
@@ -98,18 +51,61 @@ export default function MyClass() {
   const weekDays = getWeekDates();
   const [selectedDay, setSelectedDay] = useState(() => weekDays.find(d => d.isToday) || weekDays[0]);
 
+  // Firebase'dan ma'lumotlarni yuklab olish
+  useEffect(() => {
+    loadDataFromFirebase();
+  }, []);
+
+  const loadDataFromFirebase = async () => {
+    try {
+      const classesSnap = await getDocs(collection(db, 'classes'));
+      setClassesList(classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      setTeachersList(teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      const timetableSnap = await getDocs(collection(db, 'timetable'));
+      setTimetable(timetableSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err) {
+      console.error("Firebase'dan ma'lumotlarni olishda xatolik:", err);
+    }
+  };
+
+  const isAdmin = user?.role === 'administrator' || user?.role === 'admin';
+
+  // O'qituvchiga biriktirilgan sinfni izlash
+  const teacherObj = teachersList.find(t => 
+    (t.full_name || t.fullName || t.name || '').toLowerCase().trim() === (user?.fullName || user?.username || '').toLowerCase().trim()
+  );
+
+  const assignedClass = classesList.find(c => {
+    const assigned = teacherObj?.assigned_class || teacherObj?.assignedClass;
+    const cId = c.id || c.class_id;
+    if (assigned) {
+      return cId === assigned;
+    }
+    const cTeacher = c.teacher || c.teacher_name || '';
+    return cTeacher.toLowerCase().includes((user?.fullName || user?.username || '').toLowerCase());
+  });
+
+  // Ekranda ko'rsatiladigan sinf obyekti
+  const activeClassObj = isAdmin 
+    ? classesList.find(c => (c.id || c.class_id) === (selectedAdminClassId || classesList[0]?.id || classesList[0]?.class_id)) || classesList[0]
+    : assignedClass;
+
+  // BARCHA HOOK'LARDAN SUNG SHARTNI TEKSHIRAMIZ:
   if (!isAdmin && !assignedClass && classesList.length > 0) {
     return (
       <div className="p-8 text-center space-y-4 max-w-md mx-auto my-12 bg-white rounded-3xl border border-slate-200/80 shadow-lg">
         <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
         <h3 className="text-base font-black text-slate-800">Sizga sinf biriktirilmagan!</h3>
-        <p className="text-xs text-slate-500 font-medium">Ushbu bo'lim faqat sinf rahbarlari va adminlar uchun mo'ljallangan.</p>
+        <p className="text-xs text-slate-500 font-medium">Ushbu bo'lim faqat o'z sinfiga ega sinf rahbarlari uchun mo'ljallangan.</p>
       </div>
     );
   }
 
-  // Tanlangan kun va faol sinf uchun dars jadvali
   const activeClassId = activeClassObj?.id || activeClassObj?.class_id;
+
   const dayLessons = activeClassObj 
     ? timetable.filter(item => {
         const itemDay = item.day || item.day_of_week;
@@ -130,11 +126,10 @@ export default function MyClass() {
             <Sparkles className="w-5 h-5 text-amber-500" />
           </div>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-            {isAdmin ? "Barcha sinflarning dars jadvali va kitob/daftar natijalari" : `Sinf rahbari: ${activeClassObj?.teacher || activeClassObj?.teacher_name || user?.fullName}`}
+            {isAdmin ? "Barcha sinflar nazorati va o'quvchilar boshqaruvi" : `Sinf rahbari: ${activeClassObj?.teacher || activeClassObj?.teacher_name || user?.fullName}`}
           </p>
         </div>
 
-        {/* AGAR ADMIN BO'LSA - BARCHA SINFLARNI TANLASH SELECT'I */}
         {isAdmin && (
           <div className="flex items-center space-x-2 bg-white p-2 rounded-2xl border border-slate-200/80 shadow-sm">
             <span className="text-xs font-black text-slate-500 uppercase px-2">Sinfni tanlang:</span>
@@ -154,7 +149,40 @@ export default function MyClass() {
         )}
       </div>
 
-      {/* HAFTA KUNLARI VA SANALARI */}
+      {/* ASOSIY 2 TA TUGMA */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* 1. Sinfni ko'rish tugmasi */}
+        <button
+          onClick={() => navigate(`/class-detail/${activeClassId}`)}
+          className="p-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-3xl shadow-lg shadow-blue-500/20 flex items-center justify-between transition group text-left"
+        >
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-white">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-black">Sinfni ko'rish</h3>
+              <p className="text-xs text-blue-100 font-medium mt-0.5">O'quvchilar ro'yxati, qo'shish va tahrirlash</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-blue-200 group-hover:translate-x-1 transition" />
+        </button>
+
+        {/* 2. Sinf nazorati */}
+        <div className="p-5 bg-white border border-slate-200/80 rounded-3xl shadow-sm flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+              <Eye className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-800">Sinf nazorati</h3>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Kunlik dars jadvali va fan natijalari</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* HAFTA KUNLARI VA DARS JADVALI */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm space-y-3">
         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
           <span className="text-xs font-black text-slate-500 uppercase flex items-center space-x-1.5">
@@ -166,7 +194,6 @@ export default function MyClass() {
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
           {weekDays.map((day) => {
             const isSelected = selectedDay.id === day.id;
-
             return (
               <button
                 key={day.id}
@@ -181,7 +208,6 @@ export default function MyClass() {
                 <p className={`text-[11px] font-bold mt-0.5 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
                   {day.formattedDate}
                 </p>
-
                 {day.isToday && (
                   <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-blue-600'}`} />
                 )}
@@ -191,15 +217,12 @@ export default function MyClass() {
         </div>
       </div>
 
-      {/* TANLANGAN KUNLIK DARS JADVALI (FANLAR) */}
+      {/* DARS JADVALI RO'YXATI */}
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
           <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm">
             {activeClassObj?.name || activeClassId} — {selectedDay.name} ({selectedDay.formattedDate}) Darslari
           </h3>
-          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-xl">
-            Natijalarni ko'rish uchun fan ustiga bosing
-          </span>
         </div>
 
         <div className="divide-y divide-slate-100">
@@ -230,7 +253,6 @@ export default function MyClass() {
                     <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition flex items-center justify-center font-black text-xs flex-shrink-0">
                       {lNumber}-dars
                     </div>
-
                     <div>
                       <h4 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
                         <BookOpen className="w-4 h-4 text-blue-600" />
@@ -238,7 +260,7 @@ export default function MyClass() {
                       </h4>
                       <p className="text-xs text-slate-500 flex items-center space-x-1 font-medium">
                         <User className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Fan o'qituvchisi: <strong className="text-slate-800 font-bold">{tName}</strong></span>
+                        <span>O'qituvchi: <strong className="text-slate-800 font-bold">{tName}</strong></span>
                       </p>
                     </div>
                   </div>

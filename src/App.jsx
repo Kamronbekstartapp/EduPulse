@@ -62,6 +62,7 @@ export default function App() {
           <Route path="/book-notebook" element={<BookNotebook />} />
           <Route path="/my-class" element={<MyClass />} />
 <Route path="/my-class/subject-status" element={<ClassSubjectStatus />} />
+<Route path="/class-detail/:classId" element={<ClassDetail />} />
           
           {/* FAQAT ADMIN KO'RA OLADIGAN BOSHGARUV SAHIFALARI */}
           {user.role === 'administrator' && (
