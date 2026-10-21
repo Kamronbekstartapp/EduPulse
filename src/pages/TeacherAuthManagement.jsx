@@ -49,22 +49,7 @@ export default function TeacherAuthManagement() {
       }));
       
       setUserList(users.length > 0 ? users : [
-        {
-          id: 'USR-1',
-          fullName: 'Azizov Murod',
-          username: 'murod',
-          password: '123',
-          position: 'Sinf rahbari',
-          canDownloadReport: false
-        },
-        {
-          id: 'USR-2',
-          fullName: 'Karimova Zilola',
-          username: 'zilola',
-          password: '123',
-          position: 'Zavuch',
-          canDownloadReport: true
-        }
+        
       ]);
     } catch (err) {
       console.error("Akkauntlarni yuklashda xatolik:", err);

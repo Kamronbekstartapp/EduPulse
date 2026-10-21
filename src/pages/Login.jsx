@@ -25,8 +25,8 @@ export default function Login({ onLogin }) {
 
     try {
       // 1. Admin tekshiruvi (rahbar / admin)
-      if (inputUser === 'rahbar' || inputUser === 'admin') {
-        if (inputPass === 'admin123') {
+      if (inputUser === 'rahbar' || inputUser === 'adminbek') {
+        if (inputPass === 'adminbek123') {
           onLogin({
             username: 'Admin',
             role: 'administrator',
