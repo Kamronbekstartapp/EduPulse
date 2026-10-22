@@ -71,7 +71,7 @@ export default function Sidebar({ onLogout, user }) {
             className="flex items-center space-x-3 cursor-pointer px-3 py-2"
           >
             <div className="shadow-lg shadow-blue-500/30 flex-shrink-0">
-              <img src="/logo.png" alt="EduPulse Logo" width="48" height="32" />
+              <img src="/icon-192.png" alt="EduPulse Logo" width="48" height="32" />
             </div>
             <span className="text-2xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
               EduPulse

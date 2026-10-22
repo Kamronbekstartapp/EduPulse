@@ -17,6 +17,7 @@ import Timetable from './pages/Timetable';
 import BookNotebook from './pages/BookNotebook';
 import MyClass from './pages/MyClass';
 import ClassSubjectStatus from './pages/ClassSubjectStatus';
+import InstallBanner from './components/InstallBanner';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -83,8 +84,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
       <Sidebar onLogout={handleLogout} user={user} />
-
+ <InstallBanner />
       <main className="flex-1 pb-28 md:pb-8 pt-4 md:pt-0 overflow-x-hidden">
+       
         <Routes>
           {/* BARCHA FOYDALANUVCHILAR UCHUN OCHIQ SAHIFALAR */}
           <Route path="/" element={<Home />} />
@@ -98,6 +100,7 @@ export default function App() {
           <Route path="/my-class" element={<MyClass />} />
           <Route path="/my-class/subject-status" element={<ClassSubjectStatus />} />
           <Route path="/class-detail/:classId" element={<ClassDetail />} />
+          
           
           {/* FAQAT ADMIN KO'RA OLADIGAN BOSHGARUV SAHIFALARI */}
           {user.role === 'administrator' && (
