@@ -29,6 +29,41 @@ export default function App() {
     }
   }, []);
 
+  // F12 VA KO'RISH TUGMALARINI FAQAT ADMIN BO'LMAGANLAR UCHUN BLOKLASH
+  useEffect(() => {
+    const isAdmin = user?.role === 'administrator' || user?.role === 'admin';
+
+    // Admin bo'lsa, cheklov ishlamaydi
+    if (isAdmin) return;
+
+    // 1. Klaviaturadagi F12 va Developer Tools tugmalarini to'sish
+    const handleKeyDown = (e) => {
+      if (
+        e.keyCode === 123 || // F12
+        (e.ctrlKey && e.shiftKey && e.keyCode === 73) || // Ctrl + Shift + I
+        (e.ctrlKey && e.shiftKey && e.keyCode === 74) || // Ctrl + Shift + J
+        (e.ctrlKey && e.keyCode === 85) // Ctrl + U (Manba kodini ko'rish)
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    // 2. Sichqonchaning o'ng tugmasini (Kontekst menyu) taqiqlash
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, [user]);
+
   const handleLogin = (userData) => {
     setUser(userData);
     localStorage.setItem('edupulse_user', JSON.stringify(userData));
@@ -61,8 +96,8 @@ export default function App() {
           <Route path="/timetable" element={<Timetable />} />
           <Route path="/book-notebook" element={<BookNotebook />} />
           <Route path="/my-class" element={<MyClass />} />
-<Route path="/my-class/subject-status" element={<ClassSubjectStatus />} />
-<Route path="/class-detail/:classId" element={<ClassDetail />} />
+          <Route path="/my-class/subject-status" element={<ClassSubjectStatus />} />
+          <Route path="/class-detail/:classId" element={<ClassDetail />} />
           
           {/* FAQAT ADMIN KO'RA OLADIGAN BOSHGARUV SAHIFALARI */}
           {user.role === 'administrator' && (

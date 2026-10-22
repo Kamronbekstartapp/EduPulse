@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, User, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { db } from '../firebase'; // Firebase sozlama faylingiz manzili
 import { collection, getDocs, query, where } from 'firebase/firestore';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // Parolni ko'rsatish/yashirish holati
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -106,13 +107,24 @@ export default function Login({ onLogin }) {
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
               <input 
-                type="password" 
+                type={showPassword ? "text" : "password"} 
                 required
                 placeholder="Parol"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
+                className="w-full pl-10 pr-10 py-3 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 font-bold"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 transition"
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
             </div>
           </div>
 
